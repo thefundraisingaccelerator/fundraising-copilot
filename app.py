@@ -37,6 +37,11 @@ st.markdown("""
         color: #888;
         font-size: 0.85rem;
     }
+    .upload-section {
+        padding: 0.5rem 0;
+        border-top: 1px solid #eee;
+        margin-top: 1rem;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -107,14 +112,12 @@ def format_investor_for_context(investors):
         if inv.get('stage'):
             parts.append(f"  - Stage: {inv['stage']}")
         if inv.get('thesis'):
-            # Truncate long theses
             thesis = inv['thesis'][:300] + "..." if len(inv['thesis']) > 300 else inv['thesis']
             parts.append(f"  - Thesis: {thesis}")
         if inv.get('cheque_min') or inv.get('cheque_max'):
             cheque = f"{inv.get('cheque_min', '?')} - {inv.get('cheque_max', '?')}"
             parts.append(f"  - Cheque size: {cheque}")
         if inv.get('countries'):
-            # Truncate if too long
             countries = inv['countries'][:100] + "..." if len(inv['countries']) > 100 else inv['countries']
             parts.append(f"  - Geography: {countries}")
         if inv.get('website'):
@@ -125,6 +128,7 @@ def format_investor_for_context(investors):
 
 
 def extract_text_from_pdf(file):
+    """Extract text from PDF file"""
     reader = PdfReader(file)
     text = ""
     for page in reader.pages:
@@ -133,13 +137,32 @@ def extract_text_from_pdf(file):
 
 
 def extract_text_from_pptx(file):
+    """Extract text from PowerPoint file"""
     prs = Presentation(file)
     text = ""
-    for slide in prs.slides:
+    for slide_num, slide in enumerate(prs.slides, 1):
+        text += f"\n--- Slide {slide_num} ---\n"
         for shape in slide.shapes:
             if hasattr(shape, "text"):
                 text += shape.text + "\n"
     return text
+
+
+def extract_deck_content(uploaded_file):
+    """Extract text content from uploaded deck file"""
+    if uploaded_file is None:
+        return None
+    
+    try:
+        if uploaded_file.type == "application/pdf":
+            return extract_text_from_pdf(uploaded_file)
+        elif uploaded_file.type == "application/vnd.openxmlformats-officedocument.presentationml.presentation":
+            return extract_text_from_pptx(uploaded_file)
+    except Exception as e:
+        st.error(f"Error reading file: {str(e)}")
+        return None
+    
+    return None
 
 
 # System prompt
@@ -188,6 +211,13 @@ When reviewing anything (deck, email, strategy):
 2. Explain how an investor is likely interpreting it
 3. Suggest specific improvements
 4. End with 1–3 concrete next actions
+
+When a pitch deck is provided:
+1. Assess overall clarity and narrative flow
+2. Identify red flags an investor would notice immediately
+3. Point out missing or weak sections
+4. Give specific slide-by-slide feedback where relevant
+5. Suggest 2-3 priority improvements
 
 When recommending investors:
 1. Confirm the founder's stage, sector, and geography
@@ -288,21 +318,24 @@ if "messages" not in st.session_state:
     st.session_state.messages = []
 if "startup_context" not in st.session_state:
     st.session_state.startup_context = {}
-if "reviewing_deck" not in st.session_state:
-    st.session_state.reviewing_deck = False
+if "deck_content" not in st.session_state:
+    st.session_state.deck_content = None
+if "deck_filename" not in st.session_state:
+    st.session_state.deck_filename = None
 
 # Display chat history
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
-# Starter prompts for new users
-if not st.session_state.messages and not st.session_state.reviewing_deck:
+# Starter prompts for new users (only show if no messages yet)
+if not st.session_state.messages:
     st.markdown("**What can I help you with?**")
     col1, col2 = st.columns(2)
     with col1:
         if st.button("📊 Review my pitch deck", use_container_width=True):
-            st.session_state.reviewing_deck = True
+            starter = "Please review my pitch deck from an investor's perspective. I'll upload it below."
+            st.session_state.starter_prompt = starter
             st.rerun()
         if st.button("🎯 Am I ready to raise?", use_container_width=True):
             starter = "How do I know if I'm ready to start fundraising? What proof points should I have before approaching investors?"
@@ -318,76 +351,66 @@ if not st.session_state.messages and not st.session_state.reviewing_deck:
             st.session_state.starter_prompt = starter
             st.rerun()
 
+# File uploader - always visible
+st.markdown("---")
+uploaded_file = st.file_uploader(
+    "📎 Upload your pitch deck (optional)",
+    type=["pdf", "pptx"],
+    help="Upload a PDF or PowerPoint deck to get feedback"
+)
+
+# Process uploaded file
+if uploaded_file is not None:
+    # Check if this is a new file
+    if st.session_state.deck_filename != uploaded_file.name:
+        deck_content = extract_deck_content(uploaded_file)
+        if deck_content:
+            st.session_state.deck_content = deck_content
+            st.session_state.deck_filename = uploaded_file.name
+            st.success(f"✅ Loaded: {uploaded_file.name}")
+            
+            if len(deck_content.strip()) < 300:
+                st.warning("⚠️ We couldn't extract much text. If your deck is image-heavy, feedback may be limited.")
+        else:
+            st.error("Could not extract content from file.")
+    else:
+        st.info(f"📄 Using: {uploaded_file.name}")
+
+# Show current deck status
+if st.session_state.deck_content and not uploaded_file:
+    st.info(f"📄 Deck loaded: {st.session_state.deck_filename} (clear by refreshing)")
+
 # Handle starter prompts
 if "starter_prompt" in st.session_state:
     prompt = st.session_state.starter_prompt
     del st.session_state.starter_prompt
     st.session_state.messages.append({"role": "user", "content": prompt})
     
+    # Build the message with deck content if available
+    full_prompt = prompt
+    if st.session_state.deck_content:
+        full_prompt += f"""
+
+---
+PITCH DECK CONTENT (from {st.session_state.deck_filename}):
+{st.session_state.deck_content[:12000]}
+---
+"""
+    
     client = get_client()
     with st.chat_message("assistant"):
         with st.spinner("Thinking..."):
             response = client.messages.create(
                 model="claude-sonnet-4-20250514",
-                max_tokens=1500,
+                max_tokens=2000,
                 system=SYSTEM_PROMPT,
-                messages=[{"role": m["role"], "content": m["content"]} for m in st.session_state.messages]
+                messages=[{"role": "user", "content": full_prompt}]
             )
             assistant_message = response.content[0].text
             st.markdown(assistant_message)
     
     st.session_state.messages.append({"role": "assistant", "content": assistant_message})
     st.rerun()
-
-# Handle deck review flow
-if st.session_state.reviewing_deck:
-    st.markdown("### Upload your pitch deck")
-
-    uploaded_file = st.file_uploader(
-        "PDF or PowerPoint only",
-        type=["pdf", "pptx"]
-    )
-
-    deck_text = ""
-
-    if uploaded_file is not None:
-        if uploaded_file.type == "application/pdf":
-            deck_text = extract_text_from_pdf(uploaded_file)
-        elif uploaded_file.type == "application/vnd.openxmlformats-officedocument.presentationml.presentation":
-            deck_text = extract_text_from_pptx(uploaded_file)
-
-        if len(deck_text.strip()) < 300:
-            st.warning(
-                "We couldn't extract much text. If your deck is image-heavy, feedback may be limited."
-            )
-
-        if st.button("🔍 Review my deck"):
-            review_prompt = f"""
-Please review the following pitch deck from an investor's perspective.
-
-Be direct and realistic.
-
-Provide:
-1. What is unclear or risky
-2. How an investor is likely interpreting this
-3. Missing or weak slides
-4. Specific improvements to increase fundraising readiness
-5. 2–3 concrete next actions
-
-PITCH DECK CONTENT:
-{deck_text[:12000]}
-"""
-
-            st.session_state.messages.append(
-                {"role": "user", "content": review_prompt}
-            )
-            st.session_state.reviewing_deck = False
-            st.rerun()
-    
-    # Cancel button
-    if st.button("← Back"):
-        st.session_state.reviewing_deck = False
-        st.rerun()
 
 # Chat input
 if prompt := st.chat_input("Describe your startup or ask a fundraising question..."):
@@ -397,12 +420,27 @@ if prompt := st.chat_input("Describe your startup or ask a fundraising question.
         st.markdown(prompt)
     
     # Check if this looks like an investor search request
-    investor_keywords = ['investor', 'investors', 'find', 'recommend', 'who should i pitch', 'vc', 'angel', 'funding', 'raise', 'fit for my']
+    investor_keywords = ['investor', 'investors', 'find', 'recommend', 'who should i pitch', 'vc', 'angel', 'funding', 'fit for my']
     is_investor_search = any(kw in prompt.lower() for kw in investor_keywords)
     
-    # Extract potential context from the message
+    # Check if this looks like a deck review request
+    deck_keywords = ['deck', 'pitch', 'review', 'feedback', 'slides', 'presentation']
+    is_deck_review = any(kw in prompt.lower() for kw in deck_keywords)
+    
+    # Build additional context
     additional_context = ""
     
+    # Add deck content if available and relevant
+    if st.session_state.deck_content and (is_deck_review or 'ready to raise' in prompt.lower() or 'ready' in prompt.lower()):
+        additional_context += f"""
+
+---
+PITCH DECK CONTENT (from {st.session_state.deck_filename}):
+{st.session_state.deck_content[:12000]}
+---
+"""
+    
+    # Add investor matches if relevant
     if is_investor_search:
         # Try to extract stage
         stage = None
@@ -444,7 +482,7 @@ if prompt := st.chat_input("Describe your startup or ask a fundraising question.
             )
             
             if matches:
-                additional_context = f"""
+                additional_context += f"""
 
 ---
 INVESTOR DATABASE RESULTS
@@ -460,14 +498,11 @@ Use this data to recommend 5-10 investors that seem like the best fit. Explain W
     client = get_client()
     with st.chat_message("assistant"):
         with st.spinner("Thinking..."):
-            # Build messages with potential investor context
+            # Build messages for API
             messages_for_api = [{"role": m["role"], "content": m["content"]} for m in st.session_state.messages[:-1]]
             
-            # Add the current message with investor context if applicable
-            current_message = prompt
-            if additional_context:
-                current_message = prompt + additional_context
-            
+            # Add current message with context
+            current_message = prompt + additional_context
             messages_for_api.append({"role": "user", "content": current_message})
             
             response = client.messages.create(
@@ -486,7 +521,8 @@ if st.session_state.messages:
     if st.button("🔄 Start new conversation", type="secondary"):
         st.session_state.messages = []
         st.session_state.startup_context = {}
-        st.session_state.reviewing_deck = False
+        st.session_state.deck_content = None
+        st.session_state.deck_filename = None
         st.rerun()
 
 # Footer
