@@ -123,6 +123,7 @@ def format_investor_for_context(investors):
     
     return "\n\n".join(formatted)
 
+
 def extract_text_from_pdf(file):
     reader = PdfReader(file)
     text = ""
@@ -139,6 +140,7 @@ def extract_text_from_pptx(file):
             if hasattr(shape, "text"):
                 text += shape.text + "\n"
     return text
+
 
 # System prompt
 SYSTEM_PROMPT = """You are Fundraising Co-Pilot, an on-demand decision support assistant for early-stage founders who are actively fundraising or about to start.
@@ -286,6 +288,8 @@ if "messages" not in st.session_state:
     st.session_state.messages = []
 if "startup_context" not in st.session_state:
     st.session_state.startup_context = {}
+if "reviewing_deck" not in st.session_state:
+    st.session_state.reviewing_deck = False
 
 # Display chat history
 for message in st.session_state.messages:
@@ -293,13 +297,13 @@ for message in st.session_state.messages:
         st.markdown(message["content"])
 
 # Starter prompts for new users
-if not st.session_state.messages:
+if not st.session_state.messages and not st.session_state.reviewing_deck:
     st.markdown("**What can I help you with?**")
     col1, col2 = st.columns(2)
     with col1:
         if st.button("📊 Review my pitch deck", use_container_width=True):
-    st.session_state.reviewing_deck = True
-    st.rerun()
+            st.session_state.reviewing_deck = True
+            st.rerun()
         if st.button("🎯 Am I ready to raise?", use_container_width=True):
             starter = "How do I know if I'm ready to start fundraising? What proof points should I have before approaching investors?"
             st.session_state.starter_prompt = starter
@@ -313,8 +317,6 @@ if not st.session_state.messages:
             starter = "I want to send a cold email to an investor. What makes the difference between an email that gets ignored vs one that gets a response?"
             st.session_state.starter_prompt = starter
             st.rerun()
-        if "reviewing_deck" not in st.session_state:
-    st.session_state.reviewing_deck = False
 
 # Handle starter prompts
 if "starter_prompt" in st.session_state:
@@ -337,6 +339,7 @@ if "starter_prompt" in st.session_state:
     st.session_state.messages.append({"role": "assistant", "content": assistant_message})
     st.rerun()
 
+# Handle deck review flow
 if st.session_state.reviewing_deck:
     st.markdown("### Upload your pitch deck")
 
@@ -355,12 +358,12 @@ if st.session_state.reviewing_deck:
 
         if len(deck_text.strip()) < 300:
             st.warning(
-                "We couldn’t extract much text. If your deck is image-heavy, feedback may be limited."
+                "We couldn't extract much text. If your deck is image-heavy, feedback may be limited."
             )
 
         if st.button("🔍 Review my deck"):
             review_prompt = f"""
-Please review the following pitch deck from an investor’s perspective.
+Please review the following pitch deck from an investor's perspective.
 
 Be direct and realistic.
 
@@ -378,9 +381,13 @@ PITCH DECK CONTENT:
             st.session_state.messages.append(
                 {"role": "user", "content": review_prompt}
             )
-
             st.session_state.reviewing_deck = False
             st.rerun()
+    
+    # Cancel button
+    if st.button("← Back"):
+        st.session_state.reviewing_deck = False
+        st.rerun()
 
 # Chat input
 if prompt := st.chat_input("Describe your startup or ask a fundraising question..."):
@@ -479,6 +486,7 @@ if st.session_state.messages:
     if st.button("🔄 Start new conversation", type="secondary"):
         st.session_state.messages = []
         st.session_state.startup_context = {}
+        st.session_state.reviewing_deck = False
         st.rerun()
 
 # Footer
