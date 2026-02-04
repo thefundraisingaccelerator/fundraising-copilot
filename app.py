@@ -3,6 +3,8 @@ from anthropic import Anthropic
 import json
 from pypdf import PdfReader
 from pptx import Presentation
+import tempfile
+import os
 
 # Page config
 st.set_page_config(
@@ -37,11 +39,6 @@ st.markdown("""
         color: #888;
         font-size: 0.85rem;
     }
-    .upload-section {
-        padding: 0.5rem 0;
-        border-top: 1px solid #eee;
-        margin-top: 1rem;
-    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -53,7 +50,7 @@ def load_investors():
 
 INVESTORS = load_investors()
 
-# Function to search/filter investors
+
 def find_matching_investors(stage=None, sector_keywords=None, geography=None, investor_type=None, max_results=20):
     """Filter investors based on criteria"""
     matches = []
@@ -61,7 +58,6 @@ def find_matching_investors(stage=None, sector_keywords=None, geography=None, in
     for inv in INVESTORS:
         score = 0
         
-        # Stage matching
         if stage and inv.get('stage'):
             inv_stages = inv['stage'].lower()
             if 'pre-seed' in stage.lower() or 'prototype' in stage.lower() or 'idea' in stage.lower():
@@ -74,29 +70,24 @@ def find_matching_investors(stage=None, sector_keywords=None, geography=None, in
                 if 'scaling' in inv_stages or 'growth' in inv_stages:
                     score += 3
         
-        # Sector/thesis matching
         if sector_keywords and inv.get('thesis'):
             thesis_lower = inv['thesis'].lower()
             for keyword in sector_keywords:
                 if keyword.lower() in thesis_lower:
                     score += 2
         
-        # Geography matching
         if geography and inv.get('countries'):
             countries_lower = inv['countries'].lower()
             if geography.lower() in countries_lower or 'uk' in countries_lower:
                 score += 2
         
-        # Investor type preference
         if investor_type:
             if investor_type.lower() in inv.get('type', '').lower():
                 score += 1
         
-        # Must have some thesis or stage info to be useful
         if score > 0 and (inv.get('thesis') or inv.get('stage')):
             matches.append((score, inv))
     
-    # Sort by score descending
     matches.sort(key=lambda x: x[0], reverse=True)
     return [m[1] for m in matches[:max_results]]
 
@@ -127,13 +118,69 @@ def format_investor_for_context(investors):
     return "\n\n".join(formatted)
 
 
-def extract_text_from_pdf(file):
-    """Extract text from PDF file"""
+def extract_text_from_pdf_basic(file):
+    """Extract text from PDF using basic pypdf method"""
     reader = PdfReader(file)
     text = ""
-    for page in reader.pages:
-        text += page.extract_text() or ""
+    for page_num, page in enumerate(reader.pages, 1):
+        page_text = page.extract_text() or ""
+        if page_text.strip():
+            text += f"\n--- Page {page_num} ---\n{page_text}"
     return text
+
+
+def extract_text_from_pdf_ocr(file):
+    """Extract text from PDF using OCR for image-heavy documents"""
+    try:
+        import pdf2image
+        import pytesseract
+        
+        # Save uploaded file to temp location
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as tmp_file:
+            tmp_file.write(file.getvalue())
+            tmp_path = tmp_file.name
+        
+        try:
+            # Convert PDF to images (lower DPI for speed, still readable)
+            images = pdf2image.convert_from_path(tmp_path, dpi=150)
+            
+            text = ""
+            for i, image in enumerate(images, 1):
+                page_text = pytesseract.image_to_string(image)
+                if page_text.strip():
+                    text += f"\n--- Page {i} (OCR) ---\n{page_text}"
+            
+            return text
+        finally:
+            os.unlink(tmp_path)
+            
+    except ImportError as e:
+        st.warning(f"OCR libraries not available: {e}")
+        return None
+    except Exception as e:
+        st.warning(f"OCR processing error: {str(e)}")
+        return None
+
+
+def extract_text_from_pdf(file):
+    """Extract text from PDF, trying basic extraction first then OCR if needed"""
+    # First try basic extraction
+    file.seek(0)
+    basic_text = extract_text_from_pdf_basic(file)
+    
+    # If we got reasonable text, use it
+    if basic_text and len(basic_text.strip()) > 500:
+        return basic_text, "text"
+    
+    # Otherwise try OCR
+    file.seek(0)
+    ocr_text = extract_text_from_pdf_ocr(file)
+    
+    if ocr_text and len(ocr_text.strip()) > len(basic_text.strip() if basic_text else ""):
+        return ocr_text, "OCR"
+    
+    # Return whatever we got
+    return basic_text, "text"
 
 
 def extract_text_from_pptx(file):
@@ -141,28 +188,31 @@ def extract_text_from_pptx(file):
     prs = Presentation(file)
     text = ""
     for slide_num, slide in enumerate(prs.slides, 1):
-        text += f"\n--- Slide {slide_num} ---\n"
+        slide_text = ""
         for shape in slide.shapes:
-            if hasattr(shape, "text"):
-                text += shape.text + "\n"
+            if hasattr(shape, "text") and shape.text.strip():
+                slide_text += shape.text + "\n"
+        if slide_text.strip():
+            text += f"\n--- Slide {slide_num} ---\n{slide_text}"
     return text
 
 
 def extract_deck_content(uploaded_file):
     """Extract text content from uploaded deck file"""
     if uploaded_file is None:
-        return None
+        return None, None
     
     try:
         if uploaded_file.type == "application/pdf":
-            return extract_text_from_pdf(uploaded_file)
+            text, method = extract_text_from_pdf(uploaded_file)
+            return text, method
         elif uploaded_file.type == "application/vnd.openxmlformats-officedocument.presentationml.presentation":
-            return extract_text_from_pptx(uploaded_file)
+            return extract_text_from_pptx(uploaded_file), "PPTX"
     except Exception as e:
         st.error(f"Error reading file: {str(e)}")
-        return None
+        return None, None
     
-    return None
+    return None, None
 
 
 # System prompt
@@ -170,20 +220,13 @@ SYSTEM_PROMPT = """You are Fundraising Co-Pilot, an on-demand decision support a
 
 Your role is to help founders make better fundraising decisions in real time, using an investor's perspective — so small mistakes don't compound.
 
-You are trained on:
-- A curated pre-seed and seed investor database (stage, cheque size, thesis, geography)
-- Fundraising heuristics and judgment patterns used by experienced investors
-- Examples of effective and ineffective investor outreach
-- Common early-stage fundraising pitfalls
-
 ## What You Help With
-You help founders:
 - Pressure-test pitch decks from an investor point of view
 - Improve investor outreach emails before sending
-- Sanity-check which investors are a realistic fit (and who to avoid)
+- Sanity-check which investors are a realistic fit
 - Clarify fundraising readiness and next priorities
 - Understand likely objections investors will have
-- **Find relevant investors from the database based on their startup's stage, sector, and geography**
+- Find relevant investors from the database
 
 You explain WHY, not just what.
 
@@ -191,117 +234,64 @@ You explain WHY, not just what.
 - Calm, direct, non-hypey
 - Investor-realistic, not motivational
 - Clear about trade-offs and uncertainty
-- Willing to say when something is unclear, premature, or risky
 - Assume the founder is smart but missing insider context
 
-## Guardrails (VERY IMPORTANT)
+## Guardrails
 You must never:
 - Promise funding, responses, or introductions
 - Claim certainty about investor decisions
 - Act as legal, financial, or investment advice
 - Encourage mass or untargeted investor outreach
-- Replace human judgment or live coaching
 
-If asked for guarantees, respond with:
-"There are no guarantees in fundraising — what I can do is help you reduce avoidable mistakes and improve clarity."
+If asked for guarantees: "There are no guarantees in fundraising — what I can do is help you reduce avoidable mistakes and improve clarity."
 
 ## How to Respond
-When reviewing anything (deck, email, strategy):
-1. Start with what's unclear or risky
-2. Explain how an investor is likely interpreting it
-3. Suggest specific improvements
-4. End with 1–3 concrete next actions
 
-**IMPORTANT: When a pitch deck is provided in the conversation, ALWAYS analyze it specifically. Do not give generic advice. Reference specific content from their deck.**
+**CRITICAL: When a pitch deck is provided, you MUST analyze THAT SPECIFIC DECK. Reference their actual content. Do not give generic advice.**
 
 When a pitch deck is provided:
-1. Assess overall clarity and narrative flow based on THEIR specific content
-2. Identify red flags an investor would notice in THEIR deck
-3. Point out missing or weak sections specific to what they've shared
-4. Give specific slide-by-slide feedback referencing THEIR actual slides
-5. Suggest 2-3 priority improvements based on what YOU SEE in their deck
+1. Start with a quick summary of what you understand the business to be
+2. Identify the 2-3 biggest red flags an investor would notice
+3. Point out what's unclear or missing
+4. Give specific slide-by-slide observations where relevant
+5. End with 2-3 priority fixes
 
 When recommending investors:
-1. Confirm the founder's stage, sector, and geography
-2. Explain why each investor might be a good fit (based on thesis/stage match)
-3. Flag any potential mismatches or concerns
-4. Recommend researching each investor before outreach
-5. Remind them that warm intros are always better than cold outreach
+1. Use the provided investor database matches
+2. Explain why each investor might be a fit based on their thesis
+3. Remind them to research each one and look for warm intro paths
 
-If information is missing, ask one or two focused follow-up questions, not many.
+## Key Heuristics
+
+### Deck Red Flags
+- **Vague Verbs**: "disrupting," "optimizing," "leveraging" without specifics
+- **Mystery Product**: By slide 4, investor doesn't know what the product actually IS
+- **Generic Titles**: "Our Solution" instead of "15% MoM Growth via Direct Sales"
+- **Scale Mismatch**: Global problem → niche solution
+
+### Pre-Seed Red Flags
+- "We need money to build the MVP" (in 2026 with AI/no-code, this signals low resourcefulness)
+- Core tech/sales outsourced to agency
+- TAM = "1% of $100B market" (vs bottom-up: "5,000 law firms × £1k/mo")
+- Messy cap table (advisors with 5% for nothing)
+
+### What Investors Listen For
+- **Earned Insight**: Non-obvious discovery from talking to 100+ customers
+- **Speed of Iteration**: What happened since last meeting?
+- **Unit Economics**: Know your CAC and margin
+- **Why Now**: What changed recently that enables this?
+
+### Too Early Signals
+- Waitlist but zero pilots/LOIs
+- Founder-problem mismatch (MedTech founder never worked in healthcare)
+- Unclear what the money gets you to
+- Only feedback from friends/family
 
 ## Default Framing
 Use often: "From an investor's perspective…"
 
 ---
-
-## KEY HEURISTICS AND FRAMEWORKS
-
-### What Makes a Deck Unclear (Instant Red Flags)
-- **The "Vague Verb" Trap**: Using words like "disrupting," "optimizing," or "leveraging" without a direct object. Bad: "We leverage AI to optimize synergy." Good: "Our AI reduces shipping costs by 15% via route-batching."
-- **The "Mystery Product" Slide**: If by slide 4 an investor doesn't know if this is a mobile app, a hardware sensor, or a Chrome extension, the deck is dead.
-- **Missing Headlines**: Slides titled "Our Solution" or "Traction" waste prime real estate. Good slides use the title as a conclusion: "15% MoM Growth Driven by Direct Sales"
-- **The "Messy Logic" Gap**: The Problem slide describes a global catastrophe, but the Solution slide describes a niche tool. The scale doesn't match.
-
-### Common Pre-Seed Red Flags
-- **"We Need Money to Build the MVP"**: In 2026, with no-code and AI, building a prototype costs almost zero. This signals lack of resourcefulness.
-- **The Outsourced Founder**: Core tech or sales strategy outsourced to an agency before the first hire.
-- **TAM via "1% of a $100B Market"**: Real founders pitch "Bottom-Up" (e.g., "5,000 mid-sized law firms × £1k/mo").
-- **Messy Cap Table**: Too many advisors taking 5% for nothing, or 50/50 split with a co-founder who has a full-time job.
-
-### What Investors Actually Listen For
-- **Earned Insight**: Did the founder discover something non-obvious by talking to 100 customers?
-- **Speed of Iteration**: How much has happened since the last meeting?
-- **Unit Economics Intuition**: Know your CAC and Margin.
-- **The "Why Now"**: What changed recently (regulatory, technical, social) that makes this possible today?
-
-### When It's "Too Early" to Raise
-- **No "Proof of Demand"**: Waitlist but zero pilots or LOIs.
-- **Founder-Problem Mismatch**: Building MedTech with no healthcare experience.
-- **Unclear Milestones**: Don't know what the money gets you to.
-- **"Self-Validation" Loop**: Only feedback from friends and family.
-
-### Top Reasons Investors Say No
-1. Lack of traction or validation
-2. Poor storytelling or pitch delivery
-3. Unclear or weak business model
-4. Team concerns
-5. Market timing/size issues
-6. Competitive positioning unclear
-
-### Good vs Bad Outreach
-
-**BAD - The "Life Story" Email:**
-Long personal history, vague subject line, asking for 60-min meeting before proving value, "we only need 1% of the market."
-
-**BAD - The "Bot" Email:**
-"We leverage blockchain to optimize digital transformation synergy." Zero research on investor, no traction mentioned.
-
-**GOOD - The "Traction Lead":**
-Subject: [Startup] // 25% MoM Growth // Ex-Google Team // Pre-Seed
-- References specific portfolio companies
-- Leads with traction metrics
-- Specific ask (15-min call on Tuesday/Wednesday)
-- DocSend link, not attachment
-
-### The "One-Minute Rule"
-Investors spend <60 seconds on a teaser deck. Every slide title should state the main takeaway.
-
----
-
-## INVESTOR DATABASE
-You have access to a database of 3,600+ investors including VCs, angels, and angel networks. When a founder asks for investor recommendations, use the provided investor matches to give specific, actionable suggestions. Always encourage them to:
-1. Research each investor's recent investments
-2. Look for warm intro paths (LinkedIn, portfolio founders)
-3. Personalize outreach based on the investor's thesis
-
----
-
-## Final Reminder
-You are decision support, not a decision maker.
-Your goal is clarity, not confidence theatre.
-
-**CRITICAL: If pitch deck content is included in the user's message, you MUST analyze that specific deck. Do not give generic advice when you have their actual deck to review.**
+You are decision support, not a decision maker. Your goal is clarity, not confidence theatre.
 """
 
 # Initialize Anthropic client
@@ -320,40 +310,39 @@ st.markdown("""
 # Initialize session state
 if "messages" not in st.session_state:
     st.session_state.messages = []
-if "startup_context" not in st.session_state:
-    st.session_state.startup_context = {}
 if "deck_content" not in st.session_state:
     st.session_state.deck_content = None
 if "deck_filename" not in st.session_state:
     st.session_state.deck_filename = None
 
-# File uploader - FIRST, before anything else
+# File uploader
 st.markdown("📎 **Upload your pitch deck** (PDF or PowerPoint)")
 uploaded_file = st.file_uploader(
     "Upload deck",
     type=["pdf", "pptx"],
-    help="Upload a PDF or PowerPoint deck to get specific feedback",
+    help="Image-heavy PDFs will be processed with OCR (may take longer)",
     label_visibility="collapsed"
 )
 
-# Process uploaded file immediately
+# Process uploaded file
 if uploaded_file is not None:
-    # Check if this is a new file
     if st.session_state.deck_filename != uploaded_file.name:
-        deck_content = extract_deck_content(uploaded_file)
-        if deck_content:
+        with st.spinner("Processing deck... (OCR may take 30-60 seconds for image-heavy PDFs)"):
+            deck_content, method = extract_deck_content(uploaded_file)
+            
+        if deck_content and len(deck_content.strip()) > 100:
             st.session_state.deck_content = deck_content
             st.session_state.deck_filename = uploaded_file.name
-            st.success(f"✅ Deck loaded: {uploaded_file.name} ({len(deck_content)} characters extracted)")
+            st.success(f"✅ Deck loaded via {method}: {uploaded_file.name} ({len(deck_content):,} characters)")
             
-            if len(deck_content.strip()) < 300:
-                st.warning("⚠️ We couldn't extract much text. If your deck is image-heavy, feedback may be limited.")
+            if len(deck_content.strip()) < 500:
+                st.warning("⚠️ Limited text extracted. Feedback may be less detailed.")
         else:
-            st.error("Could not extract content from file.")
+            st.error("Could not extract meaningful content. Try a different format.")
     else:
         st.success(f"✅ Using: {uploaded_file.name}")
 elif st.session_state.deck_content:
-    st.info(f"📄 Deck still loaded: {st.session_state.deck_filename}")
+    st.info(f"📄 Deck loaded: {st.session_state.deck_filename}")
 
 st.markdown("---")
 
@@ -362,35 +351,35 @@ for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
-# Starter prompts for new users (only show if no messages yet)
+# Starter prompts
 if not st.session_state.messages:
     st.markdown("**What can I help you with?**")
     col1, col2 = st.columns(2)
     with col1:
         if st.button("📊 Review my pitch deck", use_container_width=True):
             if st.session_state.deck_content:
-                starter = "Please review my pitch deck from an investor's perspective. Be specific about what's working and what needs improvement."
+                starter = "Review my pitch deck from an investor's perspective. Be specific about what's working and what needs to change."
             else:
-                starter = "I'd like you to review my pitch deck. Please upload it using the file uploader above first."
+                starter = "I'd like you to review my pitch deck. Please upload it above first."
             st.session_state.starter_prompt = starter
             st.rerun()
         if st.button("🎯 Am I ready to raise?", use_container_width=True):
             if st.session_state.deck_content:
-                starter = "Based on my pitch deck, am I ready to start fundraising? What proof points am I missing? Be specific about what you see in my deck."
+                starter = "Based on my deck, am I ready to fundraise? What proof points am I missing?"
             else:
-                starter = "How do I know if I'm ready to start fundraising? What proof points should I have before approaching investors? (Tip: upload your deck above for specific feedback)"
+                starter = "How do I know if I'm ready to start fundraising? (Upload your deck for specific feedback)"
             st.session_state.starter_prompt = starter
             st.rerun()
     with col2:
         if st.button("🔍 Find investors for me", use_container_width=True):
             if st.session_state.deck_content:
-                starter = "Based on my pitch deck, help me find 5-10 investors who might be a good fit. Look at my sector, stage, and what I'm building."
+                starter = "Based on my deck, find 5-10 investors who might be a good fit for my startup."
             else:
-                starter = "I need help finding investors who might be a good fit for my startup. Can you help me identify 5-10 relevant investors? Tell me about your startup first."
+                starter = "Help me find investors. First, tell me: what's your startup, stage, sector, and geography?"
             st.session_state.starter_prompt = starter
             st.rerun()
         if st.button("✉️ Review my outreach email", use_container_width=True):
-            starter = "I want to send a cold email to an investor. What makes the difference between an email that gets ignored vs one that gets a response?"
+            starter = "What makes a cold investor email get a response vs ignored? Give me examples."
             st.session_state.starter_prompt = starter
             st.rerun()
 
@@ -399,10 +388,9 @@ if "starter_prompt" in st.session_state:
     prompt = st.session_state.starter_prompt
     del st.session_state.starter_prompt
     
-    # Display user message
     st.session_state.messages.append({"role": "user", "content": prompt})
     
-    # Build the full prompt with deck content if available
+    # Build full prompt with deck if available
     full_prompt = prompt
     if st.session_state.deck_content:
         full_prompt = f"""{prompt}
@@ -413,7 +401,7 @@ if "starter_prompt" in st.session_state:
 {st.session_state.deck_content[:15000]}
 
 ---
-IMPORTANT: Analyze THIS SPECIFIC DECK above. Reference specific slides, content, and issues you see. Do not give generic advice.
+Analyze THIS SPECIFIC DECK. Reference their actual slides and content. Do not give generic advice.
 """
     
     client = get_client()
@@ -432,20 +420,19 @@ IMPORTANT: Analyze THIS SPECIFIC DECK above. Reference specific slides, content,
     st.rerun()
 
 # Chat input
-if prompt := st.chat_input("Describe your startup or ask a fundraising question..."):
+if prompt := st.chat_input("Ask a fundraising question..."):
     st.session_state.messages.append({"role": "user", "content": prompt})
     
     with st.chat_message("user"):
         st.markdown(prompt)
     
-    # Check if this looks like an investor search request
+    # Check for investor search
     investor_keywords = ['investor', 'investors', 'find', 'recommend', 'who should i pitch', 'vc', 'angel', 'funding', 'fit for my']
     is_investor_search = any(kw in prompt.lower() for kw in investor_keywords)
     
-    # Build additional context - ALWAYS include deck if available
     additional_context = ""
     
-    # ALWAYS add deck content if available
+    # Always include deck if available
     if st.session_state.deck_content:
         additional_context += f"""
 
@@ -455,12 +442,11 @@ if prompt := st.chat_input("Describe your startup or ask a fundraising question.
 {st.session_state.deck_content[:15000]}
 
 ---
-IMPORTANT: Use this deck content to give specific, personalized feedback. Reference their actual slides and content.
+Reference this deck content in your response where relevant.
 """
     
-    # Add investor matches if relevant
+    # Add investor matches if searching
     if is_investor_search:
-        # Try to extract stage
         stage = None
         if any(s in prompt.lower() for s in ['pre-seed', 'preseed', 'idea', 'prototype']):
             stage = "pre-seed"
@@ -469,26 +455,22 @@ IMPORTANT: Use this deck content to give specific, personalized feedback. Refere
         elif any(s in prompt.lower() for s in ['series a', 'scaling', 'growth']):
             stage = "series a"
         
-        # Try to extract sector keywords
         sector_keywords = []
         sectors = ['ai', 'fintech', 'healthtech', 'health', 'saas', 'b2b', 'b2c', 'consumer', 'enterprise', 
                    'climate', 'sustainability', 'edtech', 'proptech', 'foodtech', 'biotech', 'deeptech',
-                   'marketplace', 'ecommerce', 'gaming', 'web3', 'blockchain', 'crypto', 'defi',
-                   'mental health', 'wellness', 'fashion', 'retail', 'logistics', 'hr', 'legal',
-                   'insurance', 'insurtech', 'regtech', 'cybersecurity', 'security', 'iot', 'robotics',
-                   'energy', 'cleantech', 'agtech', 'space', 'mobility', 'transport', 'social impact', 'impact']
+                   'marketplace', 'ecommerce', 'gaming', 'web3', 'blockchain', 'crypto', 'mental health', 
+                   'wellness', 'fashion', 'retail', 'logistics', 'hr', 'legal', 'insurance', 'cybersecurity', 
+                   'iot', 'robotics', 'energy', 'cleantech', 'agtech', 'space', 'mobility', 'impact']
+        
+        # Check prompt and deck for sectors
+        search_text = prompt.lower()
+        if st.session_state.deck_content:
+            search_text += " " + st.session_state.deck_content.lower()
+        
         for sector in sectors:
-            if sector in prompt.lower():
+            if sector in search_text:
                 sector_keywords.append(sector)
         
-        # Also try to extract from deck content if available
-        if st.session_state.deck_content and not sector_keywords:
-            deck_lower = st.session_state.deck_content.lower()
-            for sector in sectors:
-                if sector in deck_lower:
-                    sector_keywords.append(sector)
-        
-        # Try to extract geography
         geography = None
         if any(g in prompt.lower() for g in ['uk', 'united kingdom', 'london', 'britain']):
             geography = "UK"
@@ -497,11 +479,10 @@ IMPORTANT: Use this deck content to give specific, personalized feedback. Refere
         elif any(g in prompt.lower() for g in ['europe', 'eu']):
             geography = "Europe"
         
-        # Find matching investors
         if stage or sector_keywords:
             matches = find_matching_investors(
                 stage=stage,
-                sector_keywords=sector_keywords if sector_keywords else None,
+                sector_keywords=sector_keywords[:5] if sector_keywords else None,
                 geography=geography,
                 max_results=15
             )
@@ -510,25 +491,19 @@ IMPORTANT: Use this deck content to give specific, personalized feedback. Refere
                 additional_context += f"""
 
 ---
-**INVESTOR DATABASE RESULTS**
-Based on the startup, here are potentially relevant investors from the database:
+**MATCHING INVESTORS FROM DATABASE**:
 
 {format_investor_for_context(matches)}
 
-Recommend 5-10 investors that seem like the best fit. Explain WHY each might be relevant. Remind them to research each one and look for warm intro paths.
+Recommend 5-10 that fit best. Explain why. Remind them to research and find warm intros.
 ---
 """
     
-    # Get assistant response
     client = get_client()
     with st.chat_message("assistant"):
         with st.spinner("Thinking..."):
-            # Build messages for API
             messages_for_api = [{"role": m["role"], "content": m["content"]} for m in st.session_state.messages[:-1]]
-            
-            # Add current message with context
-            current_message = prompt + additional_context
-            messages_for_api.append({"role": "user", "content": current_message})
+            messages_for_api.append({"role": "user", "content": prompt + additional_context})
             
             response = client.messages.create(
                 model="claude-sonnet-4-20250514",
@@ -541,11 +516,10 @@ Recommend 5-10 investors that seem like the best fit. Explain WHY each might be 
     
     st.session_state.messages.append({"role": "assistant", "content": assistant_message})
 
-# Clear chat button
+# Clear button
 if st.session_state.messages:
     if st.button("🔄 Start new conversation", type="secondary"):
         st.session_state.messages = []
-        st.session_state.startup_context = {}
         st.session_state.deck_content = None
         st.session_state.deck_filename = None
         st.rerun()
@@ -555,6 +529,6 @@ st.markdown("""
 <div class="footer">
     Built by <a href="https://thefundraisingaccelerator.com" target="_blank">The Fundraising Accelerator</a><br>
     Your network should not determine your net worth.<br><br>
-    <small>⚠️ This is decision support, not advice. There are no guarantees in fundraising.</small>
+    <small>⚠️ Decision support, not advice. No guarantees in fundraising.</small>
 </div>
 """, unsafe_allow_html=True)
