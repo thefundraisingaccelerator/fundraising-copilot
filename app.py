@@ -212,12 +212,14 @@ When reviewing anything (deck, email, strategy):
 3. Suggest specific improvements
 4. End with 1–3 concrete next actions
 
+**IMPORTANT: When a pitch deck is provided in the conversation, ALWAYS analyze it specifically. Do not give generic advice. Reference specific content from their deck.**
+
 When a pitch deck is provided:
-1. Assess overall clarity and narrative flow
-2. Identify red flags an investor would notice immediately
-3. Point out missing or weak sections
-4. Give specific slide-by-slide feedback where relevant
-5. Suggest 2-3 priority improvements
+1. Assess overall clarity and narrative flow based on THEIR specific content
+2. Identify red flags an investor would notice in THEIR deck
+3. Point out missing or weak sections specific to what they've shared
+4. Give specific slide-by-slide feedback referencing THEIR actual slides
+5. Suggest 2-3 priority improvements based on what YOU SEE in their deck
 
 When recommending investors:
 1. Confirm the founder's stage, sector, and geography
@@ -298,6 +300,8 @@ You have access to a database of 3,600+ investors including VCs, angels, and ang
 ## Final Reminder
 You are decision support, not a decision maker.
 Your goal is clarity, not confidence theatre.
+
+**CRITICAL: If pitch deck content is included in the user's message, you MUST analyze that specific deck. Do not give generic advice when you have their actual deck to review.**
 """
 
 # Initialize Anthropic client
@@ -323,6 +327,36 @@ if "deck_content" not in st.session_state:
 if "deck_filename" not in st.session_state:
     st.session_state.deck_filename = None
 
+# File uploader - FIRST, before anything else
+st.markdown("📎 **Upload your pitch deck** (PDF or PowerPoint)")
+uploaded_file = st.file_uploader(
+    "Upload deck",
+    type=["pdf", "pptx"],
+    help="Upload a PDF or PowerPoint deck to get specific feedback",
+    label_visibility="collapsed"
+)
+
+# Process uploaded file immediately
+if uploaded_file is not None:
+    # Check if this is a new file
+    if st.session_state.deck_filename != uploaded_file.name:
+        deck_content = extract_deck_content(uploaded_file)
+        if deck_content:
+            st.session_state.deck_content = deck_content
+            st.session_state.deck_filename = uploaded_file.name
+            st.success(f"✅ Deck loaded: {uploaded_file.name} ({len(deck_content)} characters extracted)")
+            
+            if len(deck_content.strip()) < 300:
+                st.warning("⚠️ We couldn't extract much text. If your deck is image-heavy, feedback may be limited.")
+        else:
+            st.error("Could not extract content from file.")
+    else:
+        st.success(f"✅ Using: {uploaded_file.name}")
+elif st.session_state.deck_content:
+    st.info(f"📄 Deck still loaded: {st.session_state.deck_filename}")
+
+st.markdown("---")
+
 # Display chat history
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
@@ -334,16 +368,25 @@ if not st.session_state.messages:
     col1, col2 = st.columns(2)
     with col1:
         if st.button("📊 Review my pitch deck", use_container_width=True):
-            starter = "Please review my pitch deck from an investor's perspective. I'll upload it below."
+            if st.session_state.deck_content:
+                starter = "Please review my pitch deck from an investor's perspective. Be specific about what's working and what needs improvement."
+            else:
+                starter = "I'd like you to review my pitch deck. Please upload it using the file uploader above first."
             st.session_state.starter_prompt = starter
             st.rerun()
         if st.button("🎯 Am I ready to raise?", use_container_width=True):
-            starter = "How do I know if I'm ready to start fundraising? What proof points should I have before approaching investors?"
+            if st.session_state.deck_content:
+                starter = "Based on my pitch deck, am I ready to start fundraising? What proof points am I missing? Be specific about what you see in my deck."
+            else:
+                starter = "How do I know if I'm ready to start fundraising? What proof points should I have before approaching investors? (Tip: upload your deck above for specific feedback)"
             st.session_state.starter_prompt = starter
             st.rerun()
     with col2:
         if st.button("🔍 Find investors for me", use_container_width=True):
-            starter = "I need help finding investors who might be a good fit for my startup. Can you help me identify 5-10 relevant investors?"
+            if st.session_state.deck_content:
+                starter = "Based on my pitch deck, help me find 5-10 investors who might be a good fit. Look at my sector, stage, and what I'm building."
+            else:
+                starter = "I need help finding investors who might be a good fit for my startup. Can you help me identify 5-10 relevant investors? Tell me about your startup first."
             st.session_state.starter_prompt = starter
             st.rerun()
         if st.button("✉️ Review my outreach email", use_container_width=True):
@@ -351,58 +394,34 @@ if not st.session_state.messages:
             st.session_state.starter_prompt = starter
             st.rerun()
 
-# File uploader - always visible
-st.markdown("---")
-uploaded_file = st.file_uploader(
-    "📎 Upload your pitch deck (optional)",
-    type=["pdf", "pptx"],
-    help="Upload a PDF or PowerPoint deck to get feedback"
-)
-
-# Process uploaded file
-if uploaded_file is not None:
-    # Check if this is a new file
-    if st.session_state.deck_filename != uploaded_file.name:
-        deck_content = extract_deck_content(uploaded_file)
-        if deck_content:
-            st.session_state.deck_content = deck_content
-            st.session_state.deck_filename = uploaded_file.name
-            st.success(f"✅ Loaded: {uploaded_file.name}")
-            
-            if len(deck_content.strip()) < 300:
-                st.warning("⚠️ We couldn't extract much text. If your deck is image-heavy, feedback may be limited.")
-        else:
-            st.error("Could not extract content from file.")
-    else:
-        st.info(f"📄 Using: {uploaded_file.name}")
-
-# Show current deck status
-if st.session_state.deck_content and not uploaded_file:
-    st.info(f"📄 Deck loaded: {st.session_state.deck_filename} (clear by refreshing)")
-
 # Handle starter prompts
 if "starter_prompt" in st.session_state:
     prompt = st.session_state.starter_prompt
     del st.session_state.starter_prompt
+    
+    # Display user message
     st.session_state.messages.append({"role": "user", "content": prompt})
     
-    # Build the message with deck content if available
+    # Build the full prompt with deck content if available
     full_prompt = prompt
     if st.session_state.deck_content:
-        full_prompt += f"""
+        full_prompt = f"""{prompt}
 
 ---
-PITCH DECK CONTENT (from {st.session_state.deck_filename}):
-{st.session_state.deck_content[:12000]}
+**PITCH DECK CONTENT** (from {st.session_state.deck_filename}):
+
+{st.session_state.deck_content[:15000]}
+
 ---
+IMPORTANT: Analyze THIS SPECIFIC DECK above. Reference specific slides, content, and issues you see. Do not give generic advice.
 """
     
     client = get_client()
     with st.chat_message("assistant"):
-        with st.spinner("Thinking..."):
+        with st.spinner("Analyzing..."):
             response = client.messages.create(
                 model="claude-sonnet-4-20250514",
-                max_tokens=2000,
+                max_tokens=2500,
                 system=SYSTEM_PROMPT,
                 messages=[{"role": "user", "content": full_prompt}]
             )
@@ -423,21 +442,20 @@ if prompt := st.chat_input("Describe your startup or ask a fundraising question.
     investor_keywords = ['investor', 'investors', 'find', 'recommend', 'who should i pitch', 'vc', 'angel', 'funding', 'fit for my']
     is_investor_search = any(kw in prompt.lower() for kw in investor_keywords)
     
-    # Check if this looks like a deck review request
-    deck_keywords = ['deck', 'pitch', 'review', 'feedback', 'slides', 'presentation']
-    is_deck_review = any(kw in prompt.lower() for kw in deck_keywords)
-    
-    # Build additional context
+    # Build additional context - ALWAYS include deck if available
     additional_context = ""
     
-    # Add deck content if available and relevant
-    if st.session_state.deck_content and (is_deck_review or 'ready to raise' in prompt.lower() or 'ready' in prompt.lower()):
+    # ALWAYS add deck content if available
+    if st.session_state.deck_content:
         additional_context += f"""
 
 ---
-PITCH DECK CONTENT (from {st.session_state.deck_filename}):
-{st.session_state.deck_content[:12000]}
+**PITCH DECK CONTENT** (from {st.session_state.deck_filename}):
+
+{st.session_state.deck_content[:15000]}
+
 ---
+IMPORTANT: Use this deck content to give specific, personalized feedback. Reference their actual slides and content.
 """
     
     # Add investor matches if relevant
@@ -463,6 +481,13 @@ PITCH DECK CONTENT (from {st.session_state.deck_filename}):
             if sector in prompt.lower():
                 sector_keywords.append(sector)
         
+        # Also try to extract from deck content if available
+        if st.session_state.deck_content and not sector_keywords:
+            deck_lower = st.session_state.deck_content.lower()
+            for sector in sectors:
+                if sector in deck_lower:
+                    sector_keywords.append(sector)
+        
         # Try to extract geography
         geography = None
         if any(g in prompt.lower() for g in ['uk', 'united kingdom', 'london', 'britain']):
@@ -485,12 +510,12 @@ PITCH DECK CONTENT (from {st.session_state.deck_filename}):
                 additional_context += f"""
 
 ---
-INVESTOR DATABASE RESULTS
-Based on the startup description, here are potentially relevant investors from the database:
+**INVESTOR DATABASE RESULTS**
+Based on the startup, here are potentially relevant investors from the database:
 
 {format_investor_for_context(matches)}
 
-Use this data to recommend 5-10 investors that seem like the best fit. Explain WHY each might be relevant based on their thesis and stage preferences. Remind the founder to research each one and look for warm intro paths.
+Recommend 5-10 investors that seem like the best fit. Explain WHY each might be relevant. Remind them to research each one and look for warm intro paths.
 ---
 """
     
@@ -507,7 +532,7 @@ Use this data to recommend 5-10 investors that seem like the best fit. Explain W
             
             response = client.messages.create(
                 model="claude-sonnet-4-20250514",
-                max_tokens=2000,
+                max_tokens=2500,
                 system=SYSTEM_PROMPT,
                 messages=messages_for_api
             )
