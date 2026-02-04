@@ -1,6 +1,8 @@
 import streamlit as st
 from anthropic import Anthropic
 import json
+from pypdf import PdfReader
+from pptx import Presentation
 
 # Page config
 st.set_page_config(
@@ -121,6 +123,22 @@ def format_investor_for_context(investors):
     
     return "\n\n".join(formatted)
 
+def extract_text_from_pdf(file):
+    reader = PdfReader(file)
+    text = ""
+    for page in reader.pages:
+        text += page.extract_text() or ""
+    return text
+
+
+def extract_text_from_pptx(file):
+    prs = Presentation(file)
+    text = ""
+    for slide in prs.slides:
+        for shape in slide.shapes:
+            if hasattr(shape, "text"):
+                text += shape.text + "\n"
+    return text
 
 # System prompt
 SYSTEM_PROMPT = """You are Fundraising Co-Pilot, an on-demand decision support assistant for early-stage founders who are actively fundraising or about to start.
@@ -280,9 +298,8 @@ if not st.session_state.messages:
     col1, col2 = st.columns(2)
     with col1:
         if st.button("📊 Review my pitch deck", use_container_width=True):
-            starter = "I'd like you to review my pitch deck approach. What are the most common mistakes you see that get founders an instant 'no' from investors?"
-            st.session_state.starter_prompt = starter
-            st.rerun()
+    st.session_state.reviewing_deck = True
+    st.rerun()
         if st.button("🎯 Am I ready to raise?", use_container_width=True):
             starter = "How do I know if I'm ready to start fundraising? What proof points should I have before approaching investors?"
             st.session_state.starter_prompt = starter
@@ -296,6 +313,8 @@ if not st.session_state.messages:
             starter = "I want to send a cold email to an investor. What makes the difference between an email that gets ignored vs one that gets a response?"
             st.session_state.starter_prompt = starter
             st.rerun()
+        if "reviewing_deck" not in st.session_state:
+    st.session_state.reviewing_deck = False
 
 # Handle starter prompts
 if "starter_prompt" in st.session_state:
@@ -317,6 +336,51 @@ if "starter_prompt" in st.session_state:
     
     st.session_state.messages.append({"role": "assistant", "content": assistant_message})
     st.rerun()
+
+if st.session_state.reviewing_deck:
+    st.markdown("### Upload your pitch deck")
+
+    uploaded_file = st.file_uploader(
+        "PDF or PowerPoint only",
+        type=["pdf", "pptx"]
+    )
+
+    deck_text = ""
+
+    if uploaded_file is not None:
+        if uploaded_file.type == "application/pdf":
+            deck_text = extract_text_from_pdf(uploaded_file)
+        elif uploaded_file.type == "application/vnd.openxmlformats-officedocument.presentationml.presentation":
+            deck_text = extract_text_from_pptx(uploaded_file)
+
+        if len(deck_text.strip()) < 300:
+            st.warning(
+                "We couldn’t extract much text. If your deck is image-heavy, feedback may be limited."
+            )
+
+        if st.button("🔍 Review my deck"):
+            review_prompt = f"""
+Please review the following pitch deck from an investor’s perspective.
+
+Be direct and realistic.
+
+Provide:
+1. What is unclear or risky
+2. How an investor is likely interpreting this
+3. Missing or weak slides
+4. Specific improvements to increase fundraising readiness
+5. 2–3 concrete next actions
+
+PITCH DECK CONTENT:
+{deck_text[:12000]}
+"""
+
+            st.session_state.messages.append(
+                {"role": "user", "content": review_prompt}
+            )
+
+            st.session_state.reviewing_deck = False
+            st.rerun()
 
 # Chat input
 if prompt := st.chat_input("Describe your startup or ask a fundraising question..."):
