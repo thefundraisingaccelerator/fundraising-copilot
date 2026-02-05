@@ -278,6 +278,57 @@ st.markdown("""
     /* Hide default streamlit elements */
     .stDeployButton {display: none;}
     
+    /* Hide empty containers */
+    .stChatInput:empty, 
+    .element-container:empty,
+    .stMarkdown:empty {
+        display: none !important;
+    }
+    
+    /* Fix chat input container */
+    [data-testid="stChatInput"] {
+        background: transparent !important;
+        border: none !important;
+        box-shadow: none !important;
+    }
+    
+    [data-testid="stChatInput"] > div {
+        background: #FFFFFF !important;
+        border: 1px solid #E8E4E0 !important;
+        border-radius: 12px !important;
+    }
+    
+    /* Expander styling */
+    .streamlit-expanderHeader {
+        font-family: 'Inter', sans-serif !important;
+        font-size: 0.9rem !important;
+        font-weight: 500 !important;
+        color: #666 !important;
+        background: transparent !important;
+        border: 1px solid #E8E4E0 !important;
+        border-radius: 8px !important;
+    }
+    
+    .streamlit-expanderHeader:hover {
+        color: #1a1a1a !important;
+        border-color: #B8977E !important;
+    }
+    
+    .streamlit-expanderContent {
+        border: none !important;
+        padding-top: 0.5rem !important;
+    }
+    
+    /* Sidebar styling */
+    [data-testid="stSidebar"] {
+        background: #FAFAFA !important;
+        border-right: 1px solid #E8E4E0 !important;
+    }
+    
+    [data-testid="stSidebar"] .stMarkdown {
+        font-size: 0.875rem !important;
+    }
+    
     /* Markdown in responses */
     .stMarkdown {
         font-size: 0.95rem;
@@ -581,36 +632,6 @@ if "deck_content" not in st.session_state:
 if "deck_filename" not in st.session_state:
     st.session_state.deck_filename = None
 
-# Upload section
-st.markdown('<div class="upload-section">', unsafe_allow_html=True)
-st.markdown('<div class="upload-label">📎 Upload your pitch deck</div>', unsafe_allow_html=True)
-
-uploaded_file = st.file_uploader(
-    "Upload deck",
-    type=["pdf", "pptx"],
-    help="PDF or PowerPoint. Image-heavy PDFs will be processed with OCR.",
-    label_visibility="collapsed"
-)
-
-# Process uploaded file
-if uploaded_file is not None:
-    if st.session_state.deck_filename != uploaded_file.name:
-        with st.spinner("Processing your deck..."):
-            deck_content, method = extract_deck_content(uploaded_file)
-            
-        if deck_content and len(deck_content.strip()) > 100:
-            st.session_state.deck_content = deck_content
-            st.session_state.deck_filename = uploaded_file.name
-            st.success(f"Ready to analyze: {uploaded_file.name}")
-        else:
-            st.error("Couldn't extract content. Try a different file format.")
-    else:
-        st.success(f"Using: {uploaded_file.name}")
-elif st.session_state.deck_content:
-    st.info(f"Deck loaded: {st.session_state.deck_filename}")
-
-st.markdown('</div>', unsafe_allow_html=True)
-
 # Display chat history
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
@@ -626,7 +647,7 @@ if not st.session_state.messages:
             if st.session_state.deck_content:
                 starter = "Review my pitch deck from an investor's perspective. Be specific about what's working and what needs to change."
             else:
-                starter = "I'd like you to review my pitch deck. Please upload it above first."
+                starter = "I'd like you to review my pitch deck — I'll upload it below."
             st.session_state.starter_prompt = starter
             st.rerun()
             
@@ -634,23 +655,74 @@ if not st.session_state.messages:
             if st.session_state.deck_content:
                 starter = "Based on my deck, am I ready to fundraise? What proof points am I missing?"
             else:
-                starter = "How do I know if I'm ready to start fundraising? (Upload your deck for specific feedback)"
+                starter = "Help me figure out if I'm ready to raise. I'll describe my startup and you tell me what proof points I need."
             st.session_state.starter_prompt = starter
             st.rerun()
             
     with col2:
         if st.button("🔍 Find investors for me", use_container_width=True):
-            if st.session_state.deck_content:
-                starter = "Based on my deck, find 5-10 investors who might be a good fit for my startup."
-            else:
-                starter = "Help me find investors. First, tell me: what's your startup, stage, sector, and geography?"
+            starter = "Help me find investors. I'll describe my startup and you can suggest who might be a good fit."
             st.session_state.starter_prompt = starter
             st.rerun()
             
         if st.button("✉️ Review my outreach email", use_container_width=True):
-            starter = "What makes a cold investor email get a response vs ignored? Give me examples."
+            starter = "I want to write a cold email to an investor. What makes the difference between one that gets ignored vs one that gets a response?"
             st.session_state.starter_prompt = starter
             st.rerun()
+    
+    # Upload section - collapsed/optional, below the buttons
+    st.markdown("<br>", unsafe_allow_html=True)
+    with st.expander("📎 Have a pitch deck? Upload it for specific feedback"):
+        uploaded_file = st.file_uploader(
+            "Upload deck",
+            type=["pdf", "pptx"],
+            help="PDF or PowerPoint. We'll extract the text to give you specific feedback.",
+            label_visibility="collapsed"
+        )
+        
+        # Process uploaded file
+        if uploaded_file is not None:
+            if st.session_state.deck_filename != uploaded_file.name:
+                with st.spinner("Processing your deck..."):
+                    deck_content, method = extract_deck_content(uploaded_file)
+                    
+                if deck_content and len(deck_content.strip()) > 100:
+                    st.session_state.deck_content = deck_content
+                    st.session_state.deck_filename = uploaded_file.name
+                    st.success(f"✓ Ready: {uploaded_file.name}")
+                else:
+                    st.error("Couldn't extract content. Try a different file.")
+            else:
+                st.success(f"✓ Using: {uploaded_file.name}")
+
+else:
+    # When in conversation, show smaller upload option if no deck loaded
+    if not st.session_state.deck_content:
+        with st.sidebar:
+            st.markdown("**📎 Add your deck**")
+            uploaded_file = st.file_uploader(
+                "Upload",
+                type=["pdf", "pptx"],
+                label_visibility="collapsed",
+                key="sidebar_upload"
+            )
+            if uploaded_file is not None:
+                if st.session_state.deck_filename != uploaded_file.name:
+                    with st.spinner("Processing..."):
+                        deck_content, method = extract_deck_content(uploaded_file)
+                    if deck_content and len(deck_content.strip()) > 100:
+                        st.session_state.deck_content = deck_content
+                        st.session_state.deck_filename = uploaded_file.name
+                        st.success(f"✓ {uploaded_file.name}")
+                        st.rerun()
+    else:
+        with st.sidebar:
+            st.markdown(f"**📄 Deck loaded**")
+            st.caption(st.session_state.deck_filename)
+            if st.button("Remove", type="secondary"):
+                st.session_state.deck_content = None
+                st.session_state.deck_filename = None
+                st.rerun()
 
 # Handle starter prompts
 if "starter_prompt" in st.session_state:
