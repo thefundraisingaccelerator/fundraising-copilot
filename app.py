@@ -49,7 +49,7 @@ st.markdown("""
     /* Header styling */
     .main-header {
         text-align: center;
-        padding: 1rem 0 1rem 0;
+        padding: 0.75rem 0 0.75rem 0;
         border-bottom: 1px solid #E8E4E0;
         margin-bottom: 1rem;
     }
@@ -58,7 +58,7 @@ st.markdown("""
         font-size: 1.75rem;
         font-weight: 600;
         color: #1a1a1a;
-        margin-bottom: 0.5rem;
+        margin-bottom: 0.4rem;
         letter-spacing: -0.02em;
     }
     
@@ -67,6 +67,21 @@ st.markdown("""
         color: #666;
         font-weight: 400;
         line-height: 1.5;
+        margin-bottom: 0.5rem;
+    }
+    
+    .main-header .header-disclaimer {
+        font-size: 0.75rem;
+        color: #999;
+        margin-top: 0.5rem;
+    }
+    
+    /* Upload hint */
+    .upload-hint {
+        font-size: 0.85rem;
+        color: #666;
+        margin-bottom: 0.5rem;
+        margin-top: 0.5rem;
     }
     
     /* Upload section */
@@ -74,8 +89,8 @@ st.markdown("""
         background: #FFFFFF;
         border: 1px solid #E8E4E0;
         border-radius: 12px;
-        padding: 1rem;
-        margin-bottom: 1rem;
+        padding: 0.75rem;
+        margin-bottom: 0.75rem;
     }
     
     .upload-label {
@@ -109,15 +124,15 @@ st.markdown("""
     .action-buttons {
         display: grid;
         grid-template-columns: 1fr 1fr;
-        gap: 0.75rem;
-        margin: 1rem 0;
+        gap: 0.5rem;
+        margin: 0.75rem 0;
     }
     
     .stButton > button {
         font-family: 'Inter', sans-serif !important;
         font-size: 0.9rem !important;
         font-weight: 500 !important;
-        padding: 0.875rem 1rem !important;
+        padding: 0.75rem 1rem !important;
         border-radius: 8px !important;
         border: 1px solid #E8E4E0 !important;
         background: #FFFFFF !important;
@@ -170,8 +185,8 @@ st.markdown("""
     /* Chat input */
     .stChatInput {
         border-top: 1px solid #E8E4E0;
-        padding-top: 1rem;
-        margin-top: 1rem;
+        padding-top: 0.75rem;
+        margin-top: 0.75rem;
     }
     
     .stChatInput > div {
@@ -223,15 +238,15 @@ st.markdown("""
     /* Footer */
     .footer {
         text-align: center;
-        padding: 1.5rem 0 1rem 0;
-        margin-top: 1.5rem;
+        padding: 1rem 0 0.5rem 0;
+        margin-top: 1rem;
         border-top: 1px solid #E8E4E0;
     }
     
     .footer p {
         font-size: 0.85rem;
         color: #888;
-        margin: 0.25rem 0;
+        margin: 0.2rem 0;
         line-height: 1.5;
     }
     
@@ -251,13 +266,7 @@ st.markdown("""
         font-style: italic;
         color: #666;
         font-size: 0.9rem;
-        margin-top: 0.5rem;
-    }
-    
-    .footer .disclaimer {
-        font-size: 0.75rem;
-        color: #999;
-        margin-top: 0.75rem;
+        margin-top: 0.25rem;
     }
     
     /* Section divider */
@@ -272,7 +281,7 @@ st.markdown("""
         font-size: 0.875rem;
         font-weight: 500;
         color: #555;
-        margin-bottom: 0.75rem;
+        margin-bottom: 0.5rem;
     }
     
     /* Hide default streamlit elements */
@@ -296,34 +305,6 @@ st.markdown("""
         background: #FFFFFF !important;
         border: 1px solid #E8E4E0 !important;
         border-radius: 12px !important;
-    }
-    
-    /* Expander styling - fixed */
-    .streamlit-expanderHeader {
-        font-family: 'Inter', sans-serif !important;
-        font-size: 0.9rem !important;
-        font-weight: 500 !important;
-        color: #666 !important;
-        background: #FAFAFA !important;
-        border: 1px solid #E8E4E0 !important;
-        border-radius: 8px !important;
-        padding: 0.75rem 1rem !important;
-    }
-    
-    .streamlit-expanderHeader:hover {
-        color: #1a1a1a !important;
-        border-color: #B8977E !important;
-        background: #FDF9F6 !important;
-    }
-    
-    .streamlit-expanderContent {
-        border: none !important;
-        padding-top: 0.75rem !important;
-    }
-    
-    /* Fix expander icon rendering */
-    [data-testid="stExpander"] summary svg {
-        display: inline-block !important;
     }
     
     /* Sidebar styling */
@@ -623,11 +604,12 @@ You are decision support, not a decision maker. Your goal is clarity, not confid
 def get_client():
     return Anthropic(api_key=st.secrets["ANTHROPIC_API_KEY"])
 
-# Header
+# Header with disclaimer
 st.markdown("""
 <div class="main-header">
     <h1>🚀 Fundraising Co-Pilot</h1>
     <p class="subtitle">AI-powered fundraising decision support,<br>built by an investor for underestimated founders</p>
+    <p class="header-disclaimer">Decision support, not advice. No guarantees in fundraising.</p>
 </div>
 """, unsafe_allow_html=True)
 
@@ -677,30 +659,29 @@ if not st.session_state.messages:
             st.session_state.starter_prompt = starter
             st.rerun()
     
-    # Upload section - collapsed/optional, below the buttons
-    st.markdown("<br>", unsafe_allow_html=True)
-    with st.expander("Have a pitch deck? Upload it for specific feedback", icon="📎"):
-        uploaded_file = st.file_uploader(
-            "Upload deck",
-            type=["pdf", "pptx"],
-            help="PDF or PowerPoint. We'll extract the text to give you specific feedback.",
-            label_visibility="collapsed"
-        )
-        
-        # Process uploaded file
-        if uploaded_file is not None:
-            if st.session_state.deck_filename != uploaded_file.name:
-                with st.spinner("Processing your deck..."):
-                    deck_content, method = extract_deck_content(uploaded_file)
-                    
-                if deck_content and len(deck_content.strip()) > 100:
-                    st.session_state.deck_content = deck_content
-                    st.session_state.deck_filename = uploaded_file.name
-                    st.success(f"✓ Ready: {uploaded_file.name}")
-                else:
-                    st.error("Couldn't extract content. Try a different file.")
+    # Upload section - simple and clean, no expander
+    st.markdown('<p class="upload-hint">Have a pitch deck? Upload it for specific feedback.</p>', unsafe_allow_html=True)
+    uploaded_file = st.file_uploader(
+        "Upload deck",
+        type=["pdf", "pptx"],
+        help="PDF or PowerPoint. We'll extract the text to give you specific feedback.",
+        label_visibility="collapsed"
+    )
+    
+    # Process uploaded file
+    if uploaded_file is not None:
+        if st.session_state.deck_filename != uploaded_file.name:
+            with st.spinner("Processing your deck..."):
+                deck_content, method = extract_deck_content(uploaded_file)
+                
+            if deck_content and len(deck_content.strip()) > 100:
+                st.session_state.deck_content = deck_content
+                st.session_state.deck_filename = uploaded_file.name
+                st.success(f"✓ Ready: {uploaded_file.name}")
             else:
-                st.success(f"✓ Using: {uploaded_file.name}")
+                st.error("Couldn't extract content. Try a different file.")
+        else:
+            st.success(f"✓ Using: {uploaded_file.name}")
 
 else:
     # When in conversation, show smaller upload option if no deck loaded
@@ -873,6 +854,5 @@ st.markdown("""
 <div class="footer">
     <p>Built by <a href="https://thefundraisingaccelerator.com" target="_blank">The Fundraising Accelerator</a></p>
     <p class="tagline">Your network should not determine your net worth.</p>
-    <p class="disclaimer">⚠️ Decision support, not advice. No guarantees in fundraising.</p>
 </div>
 """, unsafe_allow_html=True)
