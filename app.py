@@ -32,8 +32,8 @@ st.markdown("""
     
     .main .block-container {
         max-width: 720px;
-        padding-top: 2rem;
-        padding-bottom: 2rem;
+        padding-top: 0.5rem;
+        padding-bottom: 1rem;
     }
     
     /* Typography */
@@ -49,13 +49,13 @@ st.markdown("""
     /* Header styling */
     .main-header {
         text-align: center;
-        padding: 2.5rem 0 1.5rem 0;
+        padding: 1rem 0 1rem 0;
         border-bottom: 1px solid #E8E4E0;
-        margin-bottom: 1.5rem;
+        margin-bottom: 1rem;
     }
     
     .main-header h1 {
-        font-size: 2rem;
+        font-size: 1.75rem;
         font-weight: 600;
         color: #1a1a1a;
         margin-bottom: 0.5rem;
@@ -63,7 +63,7 @@ st.markdown("""
     }
     
     .main-header .subtitle {
-        font-size: 1rem;
+        font-size: 0.95rem;
         color: #666;
         font-weight: 400;
         line-height: 1.5;
@@ -74,8 +74,8 @@ st.markdown("""
         background: #FFFFFF;
         border: 1px solid #E8E4E0;
         border-radius: 12px;
-        padding: 1.25rem;
-        margin-bottom: 1.5rem;
+        padding: 1rem;
+        margin-bottom: 1rem;
     }
     
     .upload-label {
@@ -110,7 +110,7 @@ st.markdown("""
         display: grid;
         grid-template-columns: 1fr 1fr;
         gap: 0.75rem;
-        margin: 1.5rem 0;
+        margin: 1rem 0;
     }
     
     .stButton > button {
@@ -223,8 +223,8 @@ st.markdown("""
     /* Footer */
     .footer {
         text-align: center;
-        padding: 2rem 0 1rem 0;
-        margin-top: 2rem;
+        padding: 1.5rem 0 1rem 0;
+        margin-top: 1.5rem;
         border-top: 1px solid #E8E4E0;
     }
     
@@ -264,7 +264,7 @@ st.markdown("""
     .section-divider {
         border: none;
         border-top: 1px solid #E8E4E0;
-        margin: 1.5rem 0;
+        margin: 1rem 0;
     }
     
     /* Prompt label */
@@ -298,25 +298,32 @@ st.markdown("""
         border-radius: 12px !important;
     }
     
-    /* Expander styling */
+    /* Expander styling - fixed */
     .streamlit-expanderHeader {
         font-family: 'Inter', sans-serif !important;
         font-size: 0.9rem !important;
         font-weight: 500 !important;
         color: #666 !important;
-        background: transparent !important;
+        background: #FAFAFA !important;
         border: 1px solid #E8E4E0 !important;
         border-radius: 8px !important;
+        padding: 0.75rem 1rem !important;
     }
     
     .streamlit-expanderHeader:hover {
         color: #1a1a1a !important;
         border-color: #B8977E !important;
+        background: #FDF9F6 !important;
     }
     
     .streamlit-expanderContent {
         border: none !important;
-        padding-top: 0.5rem !important;
+        padding-top: 0.75rem !important;
+    }
+    
+    /* Fix expander icon rendering */
+    [data-testid="stExpander"] summary svg {
+        display: inline-block !important;
     }
     
     /* Sidebar styling */
@@ -672,7 +679,7 @@ if not st.session_state.messages:
     
     # Upload section - collapsed/optional, below the buttons
     st.markdown("<br>", unsafe_allow_html=True)
-    with st.expander("📎 Have a pitch deck? Upload it for specific feedback"):
+    with st.expander("Have a pitch deck? Upload it for specific feedback", icon="📎"):
         uploaded_file = st.file_uploader(
             "Upload deck",
             type=["pdf", "pptx"],
