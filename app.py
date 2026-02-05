@@ -10,34 +10,306 @@ import os
 st.set_page_config(
     page_title="Fundraising Co-Pilot",
     page_icon="🚀",
-    layout="centered"
+    layout="centered",
+    initial_sidebar_state="collapsed"
 )
 
-# Custom CSS
+# Professional styling inspired by Claude's aesthetic
 st.markdown("""
 <style>
+    /* Import clean fonts */
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Source+Serif+4:wght@400;500;600&display=swap');
+    
+    /* Hide Streamlit branding */
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
+    header {visibility: hidden;}
+    
+    /* Main container styling */
     .stApp {
-        max-width: 800px;
-        margin: 0 auto;
+        background-color: #FDFCFB;
     }
+    
+    .main .block-container {
+        max-width: 720px;
+        padding-top: 2rem;
+        padding-bottom: 2rem;
+    }
+    
+    /* Typography */
+    h1, h2, h3, h4, h5, h6 {
+        font-family: 'Source Serif 4', Georgia, serif !important;
+        color: #1a1a1a;
+    }
+    
+    p, span, div, input, textarea, button, label {
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif !important;
+    }
+    
+    /* Header styling */
     .main-header {
         text-align: center;
-        padding: 1rem 0 2rem 0;
+        padding: 2.5rem 0 1.5rem 0;
+        border-bottom: 1px solid #E8E4E0;
+        margin-bottom: 1.5rem;
     }
+    
     .main-header h1 {
-        color: #1a1a1a;
         font-size: 2rem;
+        font-weight: 600;
+        color: #1a1a1a;
         margin-bottom: 0.5rem;
+        letter-spacing: -0.02em;
     }
-    .main-header p {
-        color: #666;
+    
+    .main-header .subtitle {
         font-size: 1rem;
+        color: #666;
+        font-weight: 400;
+        line-height: 1.5;
     }
+    
+    /* Upload section */
+    .upload-section {
+        background: #FFFFFF;
+        border: 1px solid #E8E4E0;
+        border-radius: 12px;
+        padding: 1.25rem;
+        margin-bottom: 1.5rem;
+    }
+    
+    .upload-label {
+        font-size: 0.875rem;
+        font-weight: 500;
+        color: #1a1a1a;
+        margin-bottom: 0.75rem;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+    
+    /* File uploader customization */
+    .stFileUploader {
+        background: transparent !important;
+    }
+    
+    .stFileUploader > div {
+        background: #FAFAFA !important;
+        border: 1px dashed #D4D0CC !important;
+        border-radius: 8px !important;
+        padding: 1rem !important;
+    }
+    
+    .stFileUploader > div:hover {
+        border-color: #B8977E !important;
+        background: #FDF9F6 !important;
+    }
+    
+    /* Action buttons */
+    .action-buttons {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 0.75rem;
+        margin: 1.5rem 0;
+    }
+    
+    .stButton > button {
+        font-family: 'Inter', sans-serif !important;
+        font-size: 0.9rem !important;
+        font-weight: 500 !important;
+        padding: 0.875rem 1rem !important;
+        border-radius: 8px !important;
+        border: 1px solid #E8E4E0 !important;
+        background: #FFFFFF !important;
+        color: #1a1a1a !important;
+        transition: all 0.15s ease !important;
+        width: 100% !important;
+    }
+    
+    .stButton > button:hover {
+        background: #FDF9F6 !important;
+        border-color: #B8977E !important;
+        color: #1a1a1a !important;
+    }
+    
+    .stButton > button:active {
+        background: #F5EDE6 !important;
+    }
+    
+    /* Secondary button (clear chat) */
+    .stButton > button[kind="secondary"] {
+        background: transparent !important;
+        border: 1px solid #E8E4E0 !important;
+        color: #666 !important;
+        font-size: 0.85rem !important;
+        padding: 0.5rem 1rem !important;
+    }
+    
+    .stButton > button[kind="secondary"]:hover {
+        background: #F5F5F5 !important;
+        color: #1a1a1a !important;
+    }
+    
+    /* Chat messages */
+    .stChatMessage {
+        background: transparent !important;
+        border: none !important;
+        padding: 1rem 0 !important;
+    }
+    
+    .stChatMessage [data-testid="StyledLinkIconContainer"] {
+        display: none !important;
+    }
+    
+    /* User message */
+    [data-testid="stChatMessageContent"]:has(> div > p) {
+        font-size: 0.95rem !important;
+        line-height: 1.6 !important;
+    }
+    
+    /* Chat input */
+    .stChatInput {
+        border-top: 1px solid #E8E4E0;
+        padding-top: 1rem;
+        margin-top: 1rem;
+    }
+    
+    .stChatInput > div {
+        background: #FFFFFF !important;
+        border: 1px solid #E8E4E0 !important;
+        border-radius: 12px !important;
+        padding: 0.25rem !important;
+    }
+    
+    .stChatInput textarea {
+        font-family: 'Inter', sans-serif !important;
+        font-size: 0.95rem !important;
+        color: #1a1a1a !important;
+    }
+    
+    .stChatInput textarea::placeholder {
+        color: #999 !important;
+    }
+    
+    /* Success/info/warning messages */
+    .stSuccess, .stInfo, .stWarning, .stError {
+        font-size: 0.875rem !important;
+        border-radius: 8px !important;
+    }
+    
+    .stSuccess {
+        background-color: #F0F9F4 !important;
+        border: 1px solid #B8DBCA !important;
+        color: #1a5d36 !important;
+    }
+    
+    .stInfo {
+        background-color: #F5F5F5 !important;
+        border: 1px solid #E0E0E0 !important;
+        color: #555 !important;
+    }
+    
+    .stWarning {
+        background-color: #FFF9F0 !important;
+        border: 1px solid #F0D9B5 !important;
+        color: #8B6914 !important;
+    }
+    
+    /* Spinner */
+    .stSpinner > div {
+        border-color: #B8977E !important;
+    }
+    
+    /* Footer */
     .footer {
         text-align: center;
-        padding: 2rem 0;
-        color: #888;
+        padding: 2rem 0 1rem 0;
+        margin-top: 2rem;
+        border-top: 1px solid #E8E4E0;
+    }
+    
+    .footer p {
         font-size: 0.85rem;
+        color: #888;
+        margin: 0.25rem 0;
+        line-height: 1.5;
+    }
+    
+    .footer a {
+        color: #B8977E;
+        text-decoration: none;
+        font-weight: 500;
+    }
+    
+    .footer a:hover {
+        color: #8B6B4A;
+        text-decoration: underline;
+    }
+    
+    .footer .tagline {
+        font-family: 'Source Serif 4', Georgia, serif;
+        font-style: italic;
+        color: #666;
+        font-size: 0.9rem;
+        margin-top: 0.5rem;
+    }
+    
+    .footer .disclaimer {
+        font-size: 0.75rem;
+        color: #999;
+        margin-top: 0.75rem;
+    }
+    
+    /* Section divider */
+    .section-divider {
+        border: none;
+        border-top: 1px solid #E8E4E0;
+        margin: 1.5rem 0;
+    }
+    
+    /* Prompt label */
+    .prompt-label {
+        font-size: 0.875rem;
+        font-weight: 500;
+        color: #555;
+        margin-bottom: 0.75rem;
+    }
+    
+    /* Hide default streamlit elements */
+    .stDeployButton {display: none;}
+    
+    /* Markdown in responses */
+    .stMarkdown {
+        font-size: 0.95rem;
+        line-height: 1.7;
+        color: #1a1a1a;
+    }
+    
+    .stMarkdown h3 {
+        font-size: 1.1rem;
+        margin-top: 1.5rem;
+        margin-bottom: 0.75rem;
+    }
+    
+    .stMarkdown ul, .stMarkdown ol {
+        margin: 0.75rem 0;
+        padding-left: 1.5rem;
+    }
+    
+    .stMarkdown li {
+        margin: 0.4rem 0;
+    }
+    
+    .stMarkdown strong {
+        font-weight: 600;
+        color: #1a1a1a;
+    }
+    
+    .stMarkdown code {
+        background: #F5F5F5;
+        padding: 0.15rem 0.4rem;
+        border-radius: 4px;
+        font-size: 0.85em;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -135,13 +407,11 @@ def extract_text_from_pdf_ocr(file):
         import pdf2image
         import pytesseract
         
-        # Save uploaded file to temp location
         with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as tmp_file:
             tmp_file.write(file.getvalue())
             tmp_path = tmp_file.name
         
         try:
-            # Convert PDF to images (lower DPI for speed, still readable)
             images = pdf2image.convert_from_path(tmp_path, dpi=150)
             
             text = ""
@@ -155,7 +425,6 @@ def extract_text_from_pdf_ocr(file):
             os.unlink(tmp_path)
             
     except ImportError as e:
-        st.warning(f"OCR libraries not available: {e}")
         return None
     except Exception as e:
         st.warning(f"OCR processing error: {str(e)}")
@@ -164,22 +433,18 @@ def extract_text_from_pdf_ocr(file):
 
 def extract_text_from_pdf(file):
     """Extract text from PDF, trying basic extraction first then OCR if needed"""
-    # First try basic extraction
     file.seek(0)
     basic_text = extract_text_from_pdf_basic(file)
     
-    # If we got reasonable text, use it
     if basic_text and len(basic_text.strip()) > 500:
         return basic_text, "text"
     
-    # Otherwise try OCR
     file.seek(0)
     ocr_text = extract_text_from_pdf_ocr(file)
     
     if ocr_text and len(ocr_text.strip()) > len(basic_text.strip() if basic_text else ""):
         return ocr_text, "OCR"
     
-    # Return whatever we got
     return basic_text, "text"
 
 
@@ -235,6 +500,7 @@ You explain WHY, not just what.
 - Investor-realistic, not motivational
 - Clear about trade-offs and uncertainty
 - Assume the founder is smart but missing insider context
+- Warm but honest - like a supportive mentor who tells hard truths
 
 ## Guardrails
 You must never:
@@ -303,7 +569,7 @@ def get_client():
 st.markdown("""
 <div class="main-header">
     <h1>🚀 Fundraising Co-Pilot</h1>
-    <p>AI-powered fundraising decision support, built by an investor for underestimated founders</p>
+    <p class="subtitle">AI-powered fundraising decision support,<br>built by an investor for underestimated founders</p>
 </div>
 """, unsafe_allow_html=True)
 
@@ -315,45 +581,45 @@ if "deck_content" not in st.session_state:
 if "deck_filename" not in st.session_state:
     st.session_state.deck_filename = None
 
-# File uploader
-st.markdown("📎 **Upload your pitch deck** (PDF or PowerPoint)")
+# Upload section
+st.markdown('<div class="upload-section">', unsafe_allow_html=True)
+st.markdown('<div class="upload-label">📎 Upload your pitch deck</div>', unsafe_allow_html=True)
+
 uploaded_file = st.file_uploader(
     "Upload deck",
     type=["pdf", "pptx"],
-    help="Image-heavy PDFs will be processed with OCR (may take longer)",
+    help="PDF or PowerPoint. Image-heavy PDFs will be processed with OCR.",
     label_visibility="collapsed"
 )
 
 # Process uploaded file
 if uploaded_file is not None:
     if st.session_state.deck_filename != uploaded_file.name:
-        with st.spinner("Processing deck... (OCR may take 30-60 seconds for image-heavy PDFs)"):
+        with st.spinner("Processing your deck..."):
             deck_content, method = extract_deck_content(uploaded_file)
             
         if deck_content and len(deck_content.strip()) > 100:
             st.session_state.deck_content = deck_content
             st.session_state.deck_filename = uploaded_file.name
-            st.success(f"✅ Deck loaded via {method}: {uploaded_file.name} ({len(deck_content):,} characters)")
-            
-            if len(deck_content.strip()) < 500:
-                st.warning("⚠️ Limited text extracted. Feedback may be less detailed.")
+            st.success(f"Ready to analyze: {uploaded_file.name}")
         else:
-            st.error("Could not extract meaningful content. Try a different format.")
+            st.error("Couldn't extract content. Try a different file format.")
     else:
-        st.success(f"✅ Using: {uploaded_file.name}")
+        st.success(f"Using: {uploaded_file.name}")
 elif st.session_state.deck_content:
-    st.info(f"📄 Deck loaded: {st.session_state.deck_filename}")
+    st.info(f"Deck loaded: {st.session_state.deck_filename}")
 
-st.markdown("---")
+st.markdown('</div>', unsafe_allow_html=True)
 
 # Display chat history
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
-# Starter prompts
+# Starter prompts (only show if no messages)
 if not st.session_state.messages:
-    st.markdown("**What can I help you with?**")
+    st.markdown('<p class="prompt-label">What can I help you with?</p>', unsafe_allow_html=True)
+    
     col1, col2 = st.columns(2)
     with col1:
         if st.button("📊 Review my pitch deck", use_container_width=True):
@@ -363,6 +629,7 @@ if not st.session_state.messages:
                 starter = "I'd like you to review my pitch deck. Please upload it above first."
             st.session_state.starter_prompt = starter
             st.rerun()
+            
         if st.button("🎯 Am I ready to raise?", use_container_width=True):
             if st.session_state.deck_content:
                 starter = "Based on my deck, am I ready to fundraise? What proof points am I missing?"
@@ -370,6 +637,7 @@ if not st.session_state.messages:
                 starter = "How do I know if I'm ready to start fundraising? (Upload your deck for specific feedback)"
             st.session_state.starter_prompt = starter
             st.rerun()
+            
     with col2:
         if st.button("🔍 Find investors for me", use_container_width=True):
             if st.session_state.deck_content:
@@ -378,6 +646,7 @@ if not st.session_state.messages:
                 starter = "Help me find investors. First, tell me: what's your startup, stage, sector, and geography?"
             st.session_state.starter_prompt = starter
             st.rerun()
+            
         if st.button("✉️ Review my outreach email", use_container_width=True):
             starter = "What makes a cold investor email get a response vs ignored? Give me examples."
             st.session_state.starter_prompt = starter
@@ -390,7 +659,6 @@ if "starter_prompt" in st.session_state:
     
     st.session_state.messages.append({"role": "user", "content": prompt})
     
-    # Build full prompt with deck if available
     full_prompt = prompt
     if st.session_state.deck_content:
         full_prompt = f"""{prompt}
@@ -426,13 +694,11 @@ if prompt := st.chat_input("Ask a fundraising question..."):
     with st.chat_message("user"):
         st.markdown(prompt)
     
-    # Check for investor search
     investor_keywords = ['investor', 'investors', 'find', 'recommend', 'who should i pitch', 'vc', 'angel', 'funding', 'fit for my']
     is_investor_search = any(kw in prompt.lower() for kw in investor_keywords)
     
     additional_context = ""
     
-    # Always include deck if available
     if st.session_state.deck_content:
         additional_context += f"""
 
@@ -445,7 +711,6 @@ if prompt := st.chat_input("Ask a fundraising question..."):
 Reference this deck content in your response where relevant.
 """
     
-    # Add investor matches if searching
     if is_investor_search:
         stage = None
         if any(s in prompt.lower() for s in ['pre-seed', 'preseed', 'idea', 'prototype']):
@@ -462,7 +727,6 @@ Reference this deck content in your response where relevant.
                    'wellness', 'fashion', 'retail', 'logistics', 'hr', 'legal', 'insurance', 'cybersecurity', 
                    'iot', 'robotics', 'energy', 'cleantech', 'agtech', 'space', 'mobility', 'impact']
         
-        # Check prompt and deck for sectors
         search_text = prompt.lower()
         if st.session_state.deck_content:
             search_text += " " + st.session_state.deck_content.lower()
@@ -501,7 +765,7 @@ Recommend 5-10 that fit best. Explain why. Remind them to research and find warm
     
     client = get_client()
     with st.chat_message("assistant"):
-        with st.spinner("Thinking..."):
+        with st.spinner(""):
             messages_for_api = [{"role": m["role"], "content": m["content"]} for m in st.session_state.messages[:-1]]
             messages_for_api.append({"role": "user", "content": prompt + additional_context})
             
@@ -516,9 +780,10 @@ Recommend 5-10 that fit best. Explain why. Remind them to research and find warm
     
     st.session_state.messages.append({"role": "assistant", "content": assistant_message})
 
-# Clear button
+# Clear button (only show if there are messages)
 if st.session_state.messages:
-    if st.button("🔄 Start new conversation", type="secondary"):
+    st.markdown("<br>", unsafe_allow_html=True)
+    if st.button("↻ Start over", type="secondary"):
         st.session_state.messages = []
         st.session_state.deck_content = None
         st.session_state.deck_filename = None
@@ -527,8 +792,8 @@ if st.session_state.messages:
 # Footer
 st.markdown("""
 <div class="footer">
-    Built by <a href="https://thefundraisingaccelerator.com" target="_blank">The Fundraising Accelerator</a><br>
-    Your network should not determine your net worth.<br><br>
-    <small>⚠️ Decision support, not advice. No guarantees in fundraising.</small>
+    <p>Built by <a href="https://thefundraisingaccelerator.com" target="_blank">The Fundraising Accelerator</a></p>
+    <p class="tagline">Your network should not determine your net worth.</p>
+    <p class="disclaimer">⚠️ Decision support, not advice. No guarantees in fundraising.</p>
 </div>
 """, unsafe_allow_html=True)
