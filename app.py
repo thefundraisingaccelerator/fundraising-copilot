@@ -165,7 +165,31 @@ st.markdown("""
         color: #1a1a1a !important;
     }
     
-    /* Chat messages */
+    /* User message speech bubble */
+    .user-message {
+        background: #F0F0F0;
+        border-radius: 18px;
+        padding: 0.75rem 1rem;
+        margin: 1rem 0;
+        max-width: 85%;
+        margin-left: auto;
+        font-size: 0.95rem;
+        line-height: 1.5;
+        color: #1a1a1a;
+    }
+    
+    /* Assistant response container */
+    .assistant-container {
+        margin: 1rem 0;
+    }
+    
+    /* Make avatar image smaller and aligned left */
+    .assistant-container img {
+        border-radius: 50%;
+        margin-bottom: 0.5rem;
+    }
+    
+    /* Chat messages - hide default styling */
     .stChatMessage {
         background: transparent !important;
         border: none !important;
@@ -621,14 +645,20 @@ if "deck_content" not in st.session_state:
 if "deck_filename" not in st.session_state:
     st.session_state.deck_filename = None
 
-# Avatar for assistant messages
+# Avatars for chat messages
 ASSISTANT_AVATAR = "sutin_avatar.png"
 
 # Display chat history
 for message in st.session_state.messages:
-    avatar = ASSISTANT_AVATAR if message["role"] == "assistant" else None
-    with st.chat_message(message["role"], avatar=avatar):
+    if message["role"] == "assistant":
+        # Show avatar above the response, centered
+        st.markdown('<div class="assistant-container">', unsafe_allow_html=True)
+        st.image(ASSISTANT_AVATAR, width=36)
         st.markdown(message["content"])
+        st.markdown('</div>', unsafe_allow_html=True)
+    else:
+        # User message as speech bubble (no avatar)
+        st.markdown(f'<div class="user-message">{message["content"]}</div>', unsafe_allow_html=True)
 
 # Starter prompts (only show if no messages)
 if not st.session_state.messages:
@@ -845,16 +875,20 @@ Reference this deck content in your response where relevant.
     full_prompt = prompt + additional_context
     
     client = get_client()
-    with st.chat_message("assistant", avatar=ASSISTANT_AVATAR):
-        with st.spinner("Analyzing..."):
-            response = client.messages.create(
-                model="claude-sonnet-4-20250514",
-                max_tokens=2500,
-                system=SYSTEM_PROMPT,
-                messages=[{"role": "user", "content": full_prompt}]
-            )
-            assistant_message = response.content[0].text
-            st.markdown(assistant_message)
+    
+    # Show avatar above response
+    st.markdown('<div class="assistant-container">', unsafe_allow_html=True)
+    st.image(ASSISTANT_AVATAR, width=36)
+    with st.spinner("Analyzing..."):
+        response = client.messages.create(
+            model="claude-sonnet-4-20250514",
+            max_tokens=2500,
+            system=SYSTEM_PROMPT,
+            messages=[{"role": "user", "content": full_prompt}]
+        )
+        assistant_message = response.content[0].text
+    st.markdown(assistant_message)
+    st.markdown('</div>', unsafe_allow_html=True)
     
     st.session_state.messages.append({"role": "assistant", "content": assistant_message})
     st.rerun()
@@ -863,8 +897,8 @@ Reference this deck content in your response where relevant.
 if prompt := st.chat_input("Ask a fundraising question..."):
     st.session_state.messages.append({"role": "user", "content": prompt})
     
-    with st.chat_message("user"):
-        st.markdown(prompt)
+    # Display user message as speech bubble
+    st.markdown(f'<div class="user-message">{prompt}</div>', unsafe_allow_html=True)
     
     # Detect intent
     investor_keywords = ['find investor', 'find investors', 'suggest investor', 'recommend investor', 'who should i pitch', 'match', 'which vc', 'which angel']
@@ -961,19 +995,23 @@ Ask them to describe: 1) What their startup does, 2) What stage they're at (pre-
 """
     
     client = get_client()
-    with st.chat_message("assistant", avatar=ASSISTANT_AVATAR):
-        with st.spinner(""):
-            messages_for_api = [{"role": m["role"], "content": m["content"]} for m in st.session_state.messages[:-1]]
-            messages_for_api.append({"role": "user", "content": prompt + additional_context})
-            
-            response = client.messages.create(
-                model="claude-sonnet-4-20250514",
-                max_tokens=2500,
-                system=SYSTEM_PROMPT,
-                messages=messages_for_api
-            )
-            assistant_message = response.content[0].text
-            st.markdown(assistant_message)
+    
+    # Show avatar above response
+    st.markdown('<div class="assistant-container">', unsafe_allow_html=True)
+    st.image(ASSISTANT_AVATAR, width=36)
+    with st.spinner(""):
+        messages_for_api = [{"role": m["role"], "content": m["content"]} for m in st.session_state.messages[:-1]]
+        messages_for_api.append({"role": "user", "content": prompt + additional_context})
+        
+        response = client.messages.create(
+            model="claude-sonnet-4-20250514",
+            max_tokens=2500,
+            system=SYSTEM_PROMPT,
+            messages=messages_for_api
+        )
+        assistant_message = response.content[0].text
+    st.markdown(assistant_message)
+    st.markdown('</div>', unsafe_allow_html=True)
     
     st.session_state.messages.append({"role": "assistant", "content": assistant_message})
 
