@@ -609,7 +609,7 @@ st.markdown("""
 <div class="main-header">
     <h1>🚀 Fundraising Co-Pilot</h1>
     <p class="subtitle">AI-powered fundraising decision support,<br>built by an investor for underestimated founders</p>
-    <p class="header-disclaimer">⚠️ Decision support, not advice. No guarantees in fundraising.</p>
+    <p class="header-disclaimer">Decision support, not advice. No guarantees in fundraising.</p>
 </div>
 """, unsafe_allow_html=True)
 
@@ -636,7 +636,7 @@ if not st.session_state.messages:
             if st.session_state.deck_content:
                 starter = "Review my pitch deck from an investor's perspective. Be specific about what's working and what needs to change."
             else:
-                starter = "I'd like you to review my pitch deck — I'll upload it below."
+                starter = "I'd like you to review my pitch deck. Let me upload it first."
             st.session_state.starter_prompt = starter
             st.rerun()
             
@@ -644,18 +644,24 @@ if not st.session_state.messages:
             if st.session_state.deck_content:
                 starter = "Based on my deck, am I ready to fundraise? What proof points am I missing?"
             else:
-                starter = "Help me figure out if I'm ready to raise. I'll describe my startup and you tell me what proof points I need."
+                starter = "Help me figure out if I'm ready to raise. What questions should I be able to answer before approaching investors?"
             st.session_state.starter_prompt = starter
             st.rerun()
             
     with col2:
         if st.button("🔍 Find investors for me", use_container_width=True):
-            starter = "Help me find investors. I'll describe my startup and you can suggest who might be a good fit."
+            if st.session_state.deck_content:
+                starter = "Based on my pitch deck, find investors who would be a good fit for my startup."
+            else:
+                starter = "Help me find investors. I'll describe my startup so you can suggest who might be a good fit."
             st.session_state.starter_prompt = starter
             st.rerun()
             
         if st.button("✉️ Review my outreach email", use_container_width=True):
-            starter = "I want to write a cold email to an investor. What makes the difference between one that gets ignored vs one that gets a response?"
+            if st.session_state.deck_content:
+                starter = "Help me write a cold email to an investor based on my deck. What should I include to get a response?"
+            else:
+                starter = "I want to write a cold email to an investor. What makes the difference between one that gets ignored vs one that gets a response?"
             st.session_state.starter_prompt = starter
             st.rerun()
     
@@ -719,9 +725,86 @@ if "starter_prompt" in st.session_state:
     
     st.session_state.messages.append({"role": "user", "content": prompt})
     
+    # Check if this is an investor search request
+    investor_keywords = ['find investor', 'find investors', 'suggest investor', 'recommend investor', 'who should i pitch', 'match my startup']
+    is_investor_search = any(kw in prompt.lower() for kw in investor_keywords)
+    
+    # Check if this is a deck review request
+    deck_review_keywords = ['review my pitch deck', 'review my deck', 'analyze my deck', 'feedback on my deck']
+    is_deck_review = any(kw in prompt.lower() for kw in deck_review_keywords)
+    
     full_prompt = prompt
-    if st.session_state.deck_content:
-        full_prompt = f"""{prompt}
+    additional_context = ""
+    
+    # SCENARIO 1: Investor search WITH deck - search database and recommend
+    if is_investor_search and st.session_state.deck_content:
+        additional_context += f"""
+
+---
+**PITCH DECK CONTENT** (from {st.session_state.deck_filename}):
+
+{st.session_state.deck_content[:15000]}
+
+---
+Use this deck to understand the business and find matching investors.
+"""
+        # Extract stage and sectors from deck
+        stage = None
+        sector_keywords = []
+        sectors = ['ai', 'fintech', 'healthtech', 'health', 'saas', 'b2b', 'b2c', 'consumer', 'enterprise', 
+                   'climate', 'sustainability', 'edtech', 'proptech', 'foodtech', 'biotech', 'deeptech',
+                   'marketplace', 'ecommerce', 'gaming', 'web3', 'blockchain', 'crypto', 'mental health', 
+                   'wellness', 'fashion', 'retail', 'logistics', 'hr', 'legal', 'insurance', 'cybersecurity', 
+                   'iot', 'robotics', 'energy', 'cleantech', 'agtech', 'space', 'mobility', 'impact',
+                   'neurodiversity', 'diversity', 'inclusion', 'workplace', 'employee', 'future of work']
+        
+        search_text = st.session_state.deck_content.lower()
+        
+        # Detect stage from deck
+        if any(s in search_text for s in ['pre-seed', 'preseed', 'idea stage', 'prototype']):
+            stage = "pre-seed"
+        elif any(s in search_text for s in ['seed', 'early revenue', 'mvp', 'pilot', 'first customer']):
+            stage = "seed"
+        elif any(s in search_text for s in ['series a', 'scaling', 'growth stage']):
+            stage = "series a"
+        else:
+            stage = "seed"  # Default for most decks
+        
+        for sector in sectors:
+            if sector in search_text:
+                sector_keywords.append(sector)
+        
+        matches = find_matching_investors(
+            stage=stage,
+            sector_keywords=sector_keywords[:5] if sector_keywords else None,
+            geography="UK",
+            max_results=15
+        )
+        
+        if matches:
+            additional_context += f"""
+
+---
+**MATCHING INVESTORS FROM DATABASE**:
+
+{format_investor_for_context(matches)}
+
+Based on the deck and these investor matches, recommend 5-10 investors that fit best. Explain why each is a good fit based on their thesis and the startup's focus. Remind them to research each one and look for warm intro paths.
+---
+"""
+    
+    # SCENARIO 2: Investor search WITHOUT deck - ask for details
+    elif is_investor_search and not st.session_state.deck_content:
+        additional_context += """
+
+The user wants help finding investors but hasn't uploaded a deck or described their startup yet. 
+Ask them to briefly describe: 1) What their startup does, 2) What stage they're at, 3) What sector/industry they're in.
+Once they provide this, you can search the investor database for matches.
+"""
+    
+    # SCENARIO 3: Deck review WITH deck - analyze it
+    elif is_deck_review and st.session_state.deck_content:
+        additional_context += f"""
 
 ---
 **PITCH DECK CONTENT** (from {st.session_state.deck_filename}):
@@ -731,6 +814,31 @@ if "starter_prompt" in st.session_state:
 ---
 Analyze THIS SPECIFIC DECK. Reference their actual slides and content. Do not give generic advice.
 """
+    
+    # SCENARIO 4: Deck review WITHOUT deck - prompt to upload
+    elif is_deck_review and not st.session_state.deck_content:
+        additional_context += """
+
+The user wants a deck review but hasn't uploaded one yet. Let them know they can upload a PDF or PowerPoint deck using the file uploader, and you'll give specific feedback on it.
+"""
+    
+    # SCENARIO 5: Other requests WITH deck - reference it where relevant  
+    elif st.session_state.deck_content:
+        additional_context += f"""
+
+---
+**PITCH DECK CONTENT** (from {st.session_state.deck_filename}):
+
+{st.session_state.deck_content[:15000]}
+
+---
+Reference this deck content in your response where relevant.
+"""
+    
+    # SCENARIO 6: Other requests WITHOUT deck - just respond normally
+    # (no additional context needed)
+    
+    full_prompt = prompt + additional_context
     
     client = get_client()
     with st.chat_message("assistant"):
@@ -754,11 +862,13 @@ if prompt := st.chat_input("Ask a fundraising question..."):
     with st.chat_message("user"):
         st.markdown(prompt)
     
-    investor_keywords = ['investor', 'investors', 'find', 'recommend', 'who should i pitch', 'vc', 'angel', 'funding', 'fit for my']
+    # Detect intent
+    investor_keywords = ['find investor', 'find investors', 'suggest investor', 'recommend investor', 'who should i pitch', 'match', 'which vc', 'which angel']
     is_investor_search = any(kw in prompt.lower() for kw in investor_keywords)
     
     additional_context = ""
     
+    # Add deck content if available
     if st.session_state.deck_content:
         additional_context += f"""
 
@@ -771,30 +881,43 @@ if prompt := st.chat_input("Ask a fundraising question..."):
 Reference this deck content in your response where relevant.
 """
     
+    # If investor search, try to find matches
     if is_investor_search:
+        # Build search text from prompt + deck (if available) + conversation history
+        search_text = prompt.lower()
+        
+        # Add deck content to search
+        if st.session_state.deck_content:
+            search_text += " " + st.session_state.deck_content.lower()
+        
+        # Also check recent conversation for context (user might have described their startup)
+        for msg in st.session_state.messages[-6:]:  # Last few messages
+            if msg["role"] == "user":
+                search_text += " " + msg["content"].lower()
+        
+        # Detect stage
         stage = None
-        if any(s in prompt.lower() for s in ['pre-seed', 'preseed', 'idea', 'prototype']):
+        if any(s in search_text for s in ['pre-seed', 'preseed', 'idea stage', 'prototype']):
             stage = "pre-seed"
-        elif any(s in prompt.lower() for s in ['seed', 'early revenue', 'mvp']):
+        elif any(s in search_text for s in ['seed', 'early revenue', 'mvp', 'pilot', 'first customer']):
             stage = "seed"
-        elif any(s in prompt.lower() for s in ['series a', 'scaling', 'growth']):
+        elif any(s in search_text for s in ['series a', 'scaling', 'growth stage']):
             stage = "series a"
         
+        # Detect sectors
         sector_keywords = []
         sectors = ['ai', 'fintech', 'healthtech', 'health', 'saas', 'b2b', 'b2c', 'consumer', 'enterprise', 
                    'climate', 'sustainability', 'edtech', 'proptech', 'foodtech', 'biotech', 'deeptech',
                    'marketplace', 'ecommerce', 'gaming', 'web3', 'blockchain', 'crypto', 'mental health', 
                    'wellness', 'fashion', 'retail', 'logistics', 'hr', 'legal', 'insurance', 'cybersecurity', 
-                   'iot', 'robotics', 'energy', 'cleantech', 'agtech', 'space', 'mobility', 'impact']
-        
-        search_text = prompt.lower()
-        if st.session_state.deck_content:
-            search_text += " " + st.session_state.deck_content.lower()
+                   'iot', 'robotics', 'energy', 'cleantech', 'agtech', 'space', 'mobility', 'impact',
+                   'neurodiversity', 'diversity', 'inclusion', 'workplace', 'employee', 'future of work']
         
         for sector in sectors:
             if sector in search_text:
                 sector_keywords.append(sector)
         
+        # Detect geography
         geography = None
         if any(g in prompt.lower() for g in ['uk', 'united kingdom', 'london', 'britain']):
             geography = "UK"
@@ -802,7 +925,10 @@ Reference this deck content in your response where relevant.
             geography = "USA"
         elif any(g in prompt.lower() for g in ['europe', 'eu']):
             geography = "Europe"
+        else:
+            geography = "UK"  # Default
         
+        # Only search if we have enough context
         if stage or sector_keywords:
             matches = find_matching_investors(
                 stage=stage,
@@ -819,8 +945,15 @@ Reference this deck content in your response where relevant.
 
 {format_investor_for_context(matches)}
 
-Recommend 5-10 that fit best. Explain why. Remind them to research and find warm intros.
+Recommend 5-10 that fit best based on the startup described. Explain why each is a good fit. Remind them to research and find warm intros.
 ---
+"""
+        else:
+            # Not enough info to search - prompt will ask for details
+            additional_context += """
+
+The user wants investor recommendations but you don't have enough context about their startup yet. 
+Ask them to describe: 1) What their startup does, 2) What stage they're at (pre-seed, seed, Series A), 3) What sector/industry.
 """
     
     client = get_client()
