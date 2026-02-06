@@ -632,7 +632,7 @@ def get_client():
 st.markdown("""
 <div class="main-header">
     <h1>🚀 Fundraising Co-Pilot</h1>
-    <p class="subtitle">AI-powered fundraising decision support for founders,<br>built with real knowledge and judgment from an investor with over 20+ years investing experience</p>
+    <p class="subtitle">AI-powered fundraising decision support for founders,<br>built with real knowledge and judgment from an investor with over 20+ years investing experience.</p>
     <p class="header-disclaimer">Decision support, not advice. No guarantees in fundraising.</p>
 </div>
 """, unsafe_allow_html=True)
