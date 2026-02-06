@@ -621,9 +621,13 @@ if "deck_content" not in st.session_state:
 if "deck_filename" not in st.session_state:
     st.session_state.deck_filename = None
 
+# Avatar for assistant messages
+ASSISTANT_AVATAR = "sutin_avatar.png"
+
 # Display chat history
 for message in st.session_state.messages:
-    with st.chat_message(message["role"]):
+    avatar = ASSISTANT_AVATAR if message["role"] == "assistant" else None
+    with st.chat_message(message["role"], avatar=avatar):
         st.markdown(message["content"])
 
 # Starter prompts (only show if no messages)
@@ -841,7 +845,7 @@ Reference this deck content in your response where relevant.
     full_prompt = prompt + additional_context
     
     client = get_client()
-    with st.chat_message("assistant"):
+    with st.chat_message("assistant", avatar=ASSISTANT_AVATAR):
         with st.spinner("Analyzing..."):
             response = client.messages.create(
                 model="claude-sonnet-4-20250514",
@@ -957,7 +961,7 @@ Ask them to describe: 1) What their startup does, 2) What stage they're at (pre-
 """
     
     client = get_client()
-    with st.chat_message("assistant"):
+    with st.chat_message("assistant", avatar=ASSISTANT_AVATAR):
         with st.spinner(""):
             messages_for_api = [{"role": m["role"], "content": m["content"]} for m in st.session_state.messages[:-1]]
             messages_for_api.append({"role": "user", "content": prompt + additional_context})
